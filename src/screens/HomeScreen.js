@@ -12,10 +12,12 @@ import {
   Platform,
   ActivityIndicator,
   FlatList,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import Dice from '../components/Dice';
+import { matchingApi } from '../api';
 
 const MEETUP_PURPOSES = [
   { id: 'coffee', label: 'Kahve icmek', icon: 'coffee' },
@@ -74,6 +76,7 @@ const HomeScreen = () => {
   const [showCustomInput, setShowCustomInput] = useState(false);
   const [selectedDate, setSelectedDate] = useState(null);
   const [selectedTime, setSelectedTime] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const dateOptions = getDateOptions();
 
@@ -158,39 +161,59 @@ const HomeScreen = () => {
     setModalVisible(true);
   };
 
-  const handleStartMatching = () => {
+  const handleStartMatching = async () => {
     if (!selectedLocation) {
-      alert('Lutfen bir konum secin');
+      Alert.alert('Hata', 'Lutfen bir konum secin');
       return;
     }
 
     if (!selectedDate || !selectedTime) {
-      alert('Lutfen tarih ve saat secin');
+      Alert.alert('Hata', 'Lutfen tarih ve saat secin');
       return;
     }
 
     if (!selectedPurpose && !customPurpose.trim()) {
-      alert('Lutfen bulusma amaci secin');
+      Alert.alert('Hata', 'Lutfen bulusma amaci secin');
       return;
     }
+
+    const selectedDateObj = dateOptions.find(d => d.id === selectedDate)?.fullDate;
+    const [hours, minutes] = selectedTime.split(':');
+    selectedDateObj.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
 
     const matchingData = {
       location: {
         name: selectedLocation.name,
-        coordinates: {
-          latitude: selectedLocation.lat,
-          longitude: selectedLocation.lon,
-        },
+        latitude: selectedLocation.lat,
+        longitude: selectedLocation.lon,
       },
       participantCount,
-      date: dateOptions.find(d => d.id === selectedDate)?.fullDate,
-      time: selectedTime,
+      scheduledAt: selectedDateObj.toISOString(),
       purpose: selectedPurpose || customPurpose.trim(),
     };
 
-    console.log('Starting matching with:', matchingData);
-    setModalVisible(false);
-    // TODO: Implement matching logic
+    setIsSubmitting(true);
+
+    try {
+      console.log('Starting matching with:', matchingData);
+      const response = await matchingApi.joinQueue(matchingData);
+      console.log('Matching response:', response);
+
+      setModalVisible(false);
+      closeModal();
+
+      Alert.alert(
+        'Basarili!',
+        'Eslesme kuyruguna katildin. Grup tamamlaninca bildirim alacaksin.',
+        [{ text: 'Tamam' }]
+      );
+    } catch (error) {
+      console.error('Matching error:', error);
+      const errorMessage = error.response?.data?.message || 'Bir hata olustu. Lutfen tekrar deneyin.';
+      Alert.alert('Hata', errorMessage);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handlePurposeSelect = (purposeId) => {
@@ -512,13 +535,19 @@ const HomeScreen = () => {
             <TouchableOpacity
               style={[
                 styles.startButton,
-                (!selectedLocation || !selectedDate || !selectedTime) && styles.startButtonDisabled,
+                (!selectedLocation || !selectedDate || !selectedTime || isSubmitting) && styles.startButtonDisabled,
               ]}
               onPress={handleStartMatching}
-              disabled={!selectedLocation || !selectedDate || !selectedTime}
+              disabled={!selectedLocation || !selectedDate || !selectedTime || isSubmitting}
             >
-              <Icon name="shuffle-variant" size={24} color="#FFFFFF" />
-              <Text style={styles.startButtonText}>Eslesme Baslat</Text>
+              {isSubmitting ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Icon name="shuffle-variant" size={24} color="#FFFFFF" />
+              )}
+              <Text style={styles.startButtonText}>
+                {isSubmitting ? 'Gonderiliyor...' : 'Eslesme Baslat'}
+              </Text>
             </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>
