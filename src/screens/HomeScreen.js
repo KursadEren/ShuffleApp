@@ -26,6 +26,37 @@ const MEETUP_PURPOSES = [
   { id: 'sport', label: 'Spor yapmak', icon: 'run' },
 ];
 
+const TIME_OPTIONS = [
+  '08:00', '09:00', '10:00', '11:00', '12:00', '13:00',
+  '14:00', '15:00', '16:00', '17:00', '18:00', '19:00',
+  '20:00', '21:00', '22:00', '23:00',
+];
+
+const getDateOptions = () => {
+  const options = [];
+  const today = new Date();
+  const dayNames = ['Pazar', 'Pazartesi', 'Sali', 'Carsamba', 'Persembe', 'Cuma', 'Cumartesi'];
+  const monthNames = ['Oca', 'Sub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Agu', 'Eyl', 'Eki', 'Kas', 'Ara'];
+
+  for (let i = 0; i < 7; i++) {
+    const date = new Date(today);
+    date.setDate(today.getDate() + i);
+
+    let label;
+    if (i === 0) label = 'Bugun';
+    else if (i === 1) label = 'Yarin';
+    else label = dayNames[date.getDay()];
+
+    options.push({
+      id: i.toString(),
+      label,
+      date: `${date.getDate()} ${monthNames[date.getMonth()]}`,
+      fullDate: date,
+    });
+  }
+  return options;
+};
+
 const HomeScreen = () => {
   const { width } = useWindowDimensions();
   const diceSize = Math.min(width * 0.3, 120);
@@ -41,6 +72,10 @@ const HomeScreen = () => {
   const [selectedPurpose, setSelectedPurpose] = useState(null);
   const [customPurpose, setCustomPurpose] = useState('');
   const [showCustomInput, setShowCustomInput] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [selectedTime, setSelectedTime] = useState(null);
+
+  const dateOptions = getDateOptions();
 
   // Debounce search
   const debounceRef = React.useRef(null);
@@ -129,6 +164,11 @@ const HomeScreen = () => {
       return;
     }
 
+    if (!selectedDate || !selectedTime) {
+      alert('Lutfen tarih ve saat secin');
+      return;
+    }
+
     if (!selectedPurpose && !customPurpose.trim()) {
       alert('Lutfen bulusma amaci secin');
       return;
@@ -143,6 +183,8 @@ const HomeScreen = () => {
         },
       },
       participantCount,
+      date: dateOptions.find(d => d.id === selectedDate)?.fullDate,
+      time: selectedTime,
       purpose: selectedPurpose || customPurpose.trim(),
     };
 
@@ -181,6 +223,8 @@ const HomeScreen = () => {
     setSearchResults([]);
     setShowResults(false);
     setParticipantCount(3);
+    setSelectedDate(null);
+    setSelectedTime(null);
     setSelectedPurpose(null);
     setCustomPurpose('');
     setShowCustomInput(false);
@@ -333,6 +377,74 @@ const HomeScreen = () => {
                 </View>
               </View>
 
+              {/* Date Selection */}
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Hangi gun?</Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.dateScrollContainer}
+                >
+                  {dateOptions.map((option) => (
+                    <TouchableOpacity
+                      key={option.id}
+                      style={[
+                        styles.dateOption,
+                        selectedDate === option.id && styles.dateOptionSelected,
+                      ]}
+                      onPress={() => setSelectedDate(option.id)}
+                    >
+                      <Text
+                        style={[
+                          styles.dateOptionLabel,
+                          selectedDate === option.id && styles.dateOptionLabelSelected,
+                        ]}
+                      >
+                        {option.label}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.dateOptionDate,
+                          selectedDate === option.id && styles.dateOptionDateSelected,
+                        ]}
+                      >
+                        {option.date}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+
+              {/* Time Selection */}
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Saat kac?</Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.timeScrollContainer}
+                >
+                  {TIME_OPTIONS.map((time) => (
+                    <TouchableOpacity
+                      key={time}
+                      style={[
+                        styles.timeOption,
+                        selectedTime === time && styles.timeOptionSelected,
+                      ]}
+                      onPress={() => setSelectedTime(time)}
+                    >
+                      <Text
+                        style={[
+                          styles.timeOptionText,
+                          selectedTime === time && styles.timeOptionTextSelected,
+                        ]}
+                      >
+                        {time}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+
               {/* Purpose Selection */}
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Ne icin bulusmak istiyorsun?</Text>
@@ -398,9 +510,12 @@ const HomeScreen = () => {
 
             {/* Start Button */}
             <TouchableOpacity
-              style={[styles.startButton, !selectedLocation && styles.startButtonDisabled]}
+              style={[
+                styles.startButton,
+                (!selectedLocation || !selectedDate || !selectedTime) && styles.startButtonDisabled,
+              ]}
               onPress={handleStartMatching}
-              disabled={!selectedLocation}
+              disabled={!selectedLocation || !selectedDate || !selectedTime}
             >
               <Icon name="shuffle-variant" size={24} color="#FFFFFF" />
               <Text style={styles.startButtonText}>Eslesme Baslat</Text>
@@ -581,6 +696,58 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#6B7280',
     marginTop: -4,
+  },
+  dateScrollContainer: {
+    paddingRight: 20,
+    gap: 10,
+  },
+  dateOption: {
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
+    minWidth: 80,
+  },
+  dateOptionSelected: {
+    backgroundColor: '#6C63FF',
+  },
+  dateOptionLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1F2937',
+  },
+  dateOptionLabelSelected: {
+    color: '#FFFFFF',
+  },
+  dateOptionDate: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 4,
+  },
+  dateOptionDateSelected: {
+    color: 'rgba(255, 255, 255, 0.8)',
+  },
+  timeScrollContainer: {
+    paddingRight: 20,
+    gap: 8,
+  },
+  timeOption: {
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
+  },
+  timeOptionSelected: {
+    backgroundColor: '#6C63FF',
+  },
+  timeOptionText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1F2937',
+  },
+  timeOptionTextSelected: {
+    color: '#FFFFFF',
   },
   purposeGrid: {
     flexDirection: 'row',

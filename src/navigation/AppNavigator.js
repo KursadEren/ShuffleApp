@@ -7,6 +7,7 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
 import HomeScreen from '../screens/HomeScreen';
+import MyShufflesScreen from '../screens/MyShufflesScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import EditProfileScreen from '../screens/EditProfileScreen';
 import LocationPickerScreen from '../screens/LocationPickerScreen';
@@ -32,6 +33,16 @@ const MainTabs = () => {
           tabBarLabel: 'Ana Sayfa',
           tabBarIcon: ({ color, size }) => (
             <Icon name="home" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="MyShuffles"
+        component={MyShufflesScreen}
+        options={{
+          tabBarLabel: "Shuffle'larım",
+          tabBarIcon: ({ color, size }) => (
+            <Icon name="shuffle" size={size} color={color} />
           ),
         }}
       />
