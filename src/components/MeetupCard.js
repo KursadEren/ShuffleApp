@@ -34,12 +34,40 @@ const MeetupCard = ({
   purpose = 'coffee',
   customPurpose = '',
   imageSource = null,
+  scheduledAt = null,
   onPress,
   style,
 }) => {
   const availableSlots = totalSlots - joinedCount;
   const purposeIcon = PURPOSE_ICONS[purpose] || 'account-group';
   const purposeLabel = customPurpose || PURPOSE_LABELS[purpose] || purpose;
+
+  const formatScheduledDate = (dateString) => {
+    if (!dateString) return null;
+    try {
+      const date = new Date(dateString);
+      const now = new Date();
+      const tomorrow = new Date(now);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      const dayNames = ['Pazar', 'Pazartesi', 'Sali', 'Carsamba', 'Persembe', 'Cuma', 'Cumartesi'];
+      const monthNames = ['Oca', 'Sub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Agu', 'Eyl', 'Eki', 'Kas', 'Ara'];
+
+      const hours = date.getHours().toString().padStart(2, '0');
+      const minutes = date.getMinutes().toString().padStart(2, '0');
+      const timeStr = `${hours}:${minutes}`;
+
+      if (date.toDateString() === now.toDateString()) {
+        return `Bugun, ${timeStr}`;
+      } else if (date.toDateString() === tomorrow.toDateString()) {
+        return `Yarin, ${timeStr}`;
+      } else {
+        return `${date.getDate()} ${monthNames[date.getMonth()]}, ${dayNames[date.getDay()]} - ${timeStr}`;
+      }
+    } catch {
+      return null;
+    }
+  };
 
   const formatDistance = (km) => {
     if (km === null || km === undefined) return null;
@@ -106,6 +134,16 @@ const MeetupCard = ({
 
       {/* Info Section */}
       <View style={styles.infoContainer}>
+        {/* Scheduled Date */}
+        {scheduledAt && formatScheduledDate(scheduledAt) && (
+          <View style={styles.infoRow}>
+            <Icon name="calendar-clock" size={20} color="#10B981" />
+            <Text style={styles.scheduledText}>
+              {formatScheduledDate(scheduledAt)}
+            </Text>
+          </View>
+        )}
+
         {/* Location */}
         <View style={styles.infoRow}>
           <Icon name="map-marker" size={20} color="#6C63FF" />
@@ -257,6 +295,12 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: '#1F2937',
+  },
+  scheduledText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#10B981',
   },
   distanceText: {
     fontSize: 14,

@@ -33,6 +33,18 @@ export const shuffleApi = {
     return response.data;
   },
 
+  // Kullanıcının kendi shuffle'larını getir
+  getMyShuffles: async (params = {}) => {
+    const response = await apiClient.get('/shuffles/my', {
+      params: {
+        page: params.page || 1,
+        limit: params.limit || 20,
+        ...params,
+      }
+    });
+    return response.data;
+  },
+
   // Tek shuffle detayı
   getById: async (id) => {
     const response = await apiClient.get(`/shuffles/${id}`);

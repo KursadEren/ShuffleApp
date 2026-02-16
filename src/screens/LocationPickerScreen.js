@@ -1,196 +1,253 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   Pressable,
-  Alert,
+  TextInput,
+  FlatList,
   ActivityIndicator,
-  Platform,
-  PermissionsAndroid,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import Icon from 'react-native-vector-icons/Ionicons';
-import Button from '../components/Button';
-
-const ISTANBUL_REGION = {
-  latitude: 41.0082,
-  longitude: 28.9784,
-  latitudeDelta: 0.15,
-  longitudeDelta: 0.15,
-};
+import MCIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 const LocationPickerScreen = ({ navigation, route }) => {
   const { mode, currentLocation, onSelect } = route.params || {};
-  const mapRef = useRef(null);
+  const debounceRef = useRef(null);
 
-  const [selectedLocation, setSelectedLocation] = useState(currentLocation || null);
-  const [address, setAddress] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [region, setRegion] = useState(
-    currentLocation
-      ? {
-          latitude: currentLocation.latitude,
-          longitude: currentLocation.longitude,
-          latitudeDelta: 0.01,
-          longitudeDelta: 0.01,
-        }
-      : ISTANBUL_REGION
-  );
+  const [selectedLocation, setSelectedLocation] = useState(currentLocation || null);
+  const [recentSearches] = useState([
+    { id: '1', name: 'Istanbul, Turkiye', lat: 41.0082, lon: 28.9784 },
+    { id: '2', name: 'Ankara, Turkiye', lat: 39.9334, lon: 32.8597 },
+    { id: '3', name: 'Izmir, Turkiye', lat: 38.4192, lon: 27.1287 },
+  ]);
 
-  useEffect(() => {
-    if (!currentLocation) {
-      requestLocationPermission();
-    }
-  }, []);
-
-  const requestLocationPermission = async () => {
-    if (Platform.OS === 'android') {
-      try {
-        const granted = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-          {
-            title: 'Konum Izni',
-            message: 'Konumunuzu haritada gostermek icin izin gerekli',
-            buttonPositive: 'Izin Ver',
-            buttonNegative: 'Reddet',
-          }
-        );
-        if (granted === PermissionsAndroid.RESULTS.GRANTED) {
-          getCurrentLocation();
-        }
-      } catch (err) {
-        console.log('Permission error:', err);
-      }
-    }
-  };
-
-  const getCurrentLocation = () => {
-    setLoading(true);
-    navigator.geolocation?.getCurrentPosition(
-      (position) => {
-        const { latitude, longitude } = position.coords;
-        const newRegion = {
-          latitude,
-          longitude,
-          latitudeDelta: 0.01,
-          longitudeDelta: 0.01,
-        };
-        setRegion(newRegion);
-        mapRef.current?.animateToRegion(newRegion, 500);
-        setLoading(false);
-      },
-      (error) => {
-        console.log('Location error:', error);
-        setLoading(false);
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
-    );
-  };
-
-  const handleMapPress = async (event) => {
-    const { latitude, longitude } = event.nativeEvent.coordinate;
-    setSelectedLocation({ latitude, longitude });
-
-    // Reverse geocoding için basit bir yaklaşım
-    // Gerçek uygulamada Google Geocoding API kullanılabilir
-    setAddress(`${latitude.toFixed(4)}, ${longitude.toFixed(4)}`);
-  };
-
-  const handleConfirm = () => {
-    if (!selectedLocation) {
-      Alert.alert('Uyari', 'Lutfen haritadan bir konum secin');
+  const searchLocation = useCallback(async (query) => {
+    if (query.length < 2) {
+      setSearchResults([]);
       return;
     }
 
-    if (onSelect) {
-      onSelect({
-        ...selectedLocation,
-        address,
+    setLoading(true);
+
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=10&addressdetails=1&countrycodes=tr`,
+        {
+          headers: {
+            'User-Agent': 'ShuffleApp/1.0',
+            'Accept-Language': 'tr,en',
+          },
+        }
+      );
+      const data = await response.json();
+
+      const results = data.map((item) => {
+        const { address } = item;
+        const area = address?.neighbourhood || address?.suburb || address?.district || address?.town || address?.village || '';
+        const city = address?.city || address?.state || address?.province || '';
+        const country = address?.country || '';
+
+        let displayName = '';
+        if (area) displayName += area;
+        if (city && city !== area) displayName += (displayName ? ', ' : '') + city;
+        if (country) displayName += (displayName ? ', ' : '') + country;
+
+        return {
+          id: item.place_id.toString(),
+          name: displayName || item.display_name?.split(',').slice(0, 3).join(','),
+          fullName: item.display_name,
+          lat: parseFloat(item.lat),
+          lon: parseFloat(item.lon),
+          type: item.type,
+          category: item.class,
+        };
       });
+
+      setSearchResults(results);
+    } catch (error) {
+      console.error('Search error:', error);
+      setSearchResults([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const handleSearchChange = (text) => {
+    setSearchQuery(text);
+
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+
+    debounceRef.current = setTimeout(() => {
+      searchLocation(text);
+    }, 300);
+  };
+
+  const handleSelectLocation = (location) => {
+    Keyboard.dismiss();
+    setSelectedLocation({
+      latitude: location.lat,
+      longitude: location.lon,
+      address: location.name,
+    });
+    setSearchQuery(location.name);
+    setSearchResults([]);
+  };
+
+  const handleConfirm = () => {
+    if (!selectedLocation) return;
+
+    if (onSelect) {
+      onSelect(selectedLocation);
     }
     navigation.goBack();
   };
 
-  const handleMyLocation = () => {
-    getCurrentLocation();
+  const clearSearch = () => {
+    setSearchQuery('');
+    setSearchResults([]);
+    setSelectedLocation(null);
   };
+
+  const getLocationIcon = (category) => {
+    switch (category) {
+      case 'place':
+        return 'city';
+      case 'boundary':
+        return 'map-marker-radius';
+      case 'amenity':
+        return 'store';
+      case 'building':
+        return 'office-building';
+      default:
+        return 'map-marker';
+    }
+  };
+
+  const renderLocationItem = ({ item }) => (
+    <Pressable
+      style={styles.locationItem}
+      onPress={() => handleSelectLocation(item)}>
+      <MCIcon name={getLocationIcon(item.category)} size={22} color="#6C63FF" />
+      <View style={styles.locationItemContent}>
+        <Text style={styles.locationItemName} numberOfLines={1}>
+          {item.name}
+        </Text>
+        {item.fullName !== item.name && (
+          <Text style={styles.locationItemAddress} numberOfLines={1}>
+            {item.fullName}
+          </Text>
+        )}
+      </View>
+      <Icon name="chevron-forward" size={18} color="#9CA3AF" />
+    </Pressable>
+  );
+
+  const renderRecentItem = ({ item }) => (
+    <Pressable
+      style={styles.recentItem}
+      onPress={() => handleSelectLocation(item)}>
+      <Icon name="time-outline" size={20} color="#9CA3AF" />
+      <Text style={styles.recentItemText}>{item.name}</Text>
+    </Pressable>
+  );
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
         <Pressable style={styles.backButton} onPress={() => navigation.goBack()}>
-          <Icon name="close" size={24} color="#1F2937" />
+          <Icon name="arrow-back" size={24} color="#1F2937" />
         </Pressable>
         <Text style={styles.headerTitle}>
-          {mode === 'meetup' ? 'Bulusma Konumu Sec' : 'Konumunu Sec'}
+          {mode === 'meetup' ? 'Bulusma Konumu' : 'Konum Sec'}
         </Text>
         <View style={styles.headerRight} />
       </View>
 
-      {/* Map */}
-      <View style={styles.mapContainer}>
-        <MapView
-          ref={mapRef}
-          style={styles.map}
-          provider={PROVIDER_GOOGLE}
-          initialRegion={region}
-          onPress={handleMapPress}
-          showsUserLocation
-          showsMyLocationButton={false}>
-          {selectedLocation && (
-            <Marker
-              coordinate={selectedLocation}
-              pinColor="#6C63FF"
-            />
-          )}
-        </MapView>
-
-        {/* My Location Button */}
-        <Pressable style={styles.myLocationButton} onPress={handleMyLocation}>
+      {/* Search Input */}
+      <View style={styles.searchContainer}>
+        <View style={styles.searchInputContainer}>
+          <Icon name="search" size={20} color="#9CA3AF" />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Sehir, ilce veya mahalle ara..."
+            placeholderTextColor="#9CA3AF"
+            value={searchQuery}
+            onChangeText={handleSearchChange}
+            autoFocus
+          />
           {loading ? (
             <ActivityIndicator size="small" color="#6C63FF" />
-          ) : (
-            <Icon name="locate" size={24} color="#6C63FF" />
-          )}
-        </Pressable>
-
-        {/* Info Card */}
-        <View style={styles.infoCard}>
-          <Icon name="information-circle" size={20} color="#6C63FF" />
-          <Text style={styles.infoText}>
-            Haritaya tiklayarak konum secin
-          </Text>
+          ) : searchQuery.length > 0 ? (
+            <Pressable onPress={clearSearch}>
+              <Icon name="close-circle" size={20} color="#9CA3AF" />
+            </Pressable>
+          ) : null}
         </View>
       </View>
 
-      {/* Selected Location */}
-      <View style={styles.footer}>
-        {selectedLocation ? (
-          <View style={styles.selectedInfo}>
-            <Icon name="location" size={24} color="#6C63FF" />
-            <View style={styles.selectedTextContainer}>
-              <Text style={styles.selectedLabel}>Secilen Konum</Text>
-              <Text style={styles.selectedAddress} numberOfLines={1}>
-                {address || 'Konum secildi'}
-              </Text>
-            </View>
-          </View>
-        ) : (
-          <View style={styles.selectedInfo}>
-            <Icon name="location-outline" size={24} color="#9CA3AF" />
-            <Text style={styles.noSelectionText}>Henuz konum secilmedi</Text>
-          </View>
-        )}
-
-        <Button
-          title="Konumu Onayla"
-          onPress={handleConfirm}
-          disabled={!selectedLocation}
+      {/* Results or Recent */}
+      {searchResults.length > 0 ? (
+        <FlatList
+          data={searchResults}
+          renderItem={renderLocationItem}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.listContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         />
-      </View>
+      ) : searchQuery.length === 0 ? (
+        <View style={styles.recentContainer}>
+          {/* Selected Location */}
+          {selectedLocation && (
+            <View style={styles.selectedSection}>
+              <Text style={styles.sectionTitle}>Secilen Konum</Text>
+              <View style={styles.selectedCard}>
+                <MCIcon name="map-marker-check" size={24} color="#10B981" />
+                <View style={styles.selectedContent}>
+                  <Text style={styles.selectedName}>{selectedLocation.address}</Text>
+                  <Text style={styles.selectedCoords}>
+                    {selectedLocation.latitude.toFixed(4)}, {selectedLocation.longitude.toFixed(4)}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          )}
+
+          {/* Recent Searches */}
+          <Text style={styles.sectionTitle}>Populer Sehirler</Text>
+          <FlatList
+            data={recentSearches}
+            renderItem={renderRecentItem}
+            keyExtractor={(item) => item.id}
+            scrollEnabled={false}
+          />
+        </View>
+      ) : !loading && searchQuery.length >= 2 ? (
+        <View style={styles.emptyContainer}>
+          <MCIcon name="map-search" size={48} color="#D1D5DB" />
+          <Text style={styles.emptyText}>Sonuc bulunamadi</Text>
+          <Text style={styles.emptySubtext}>Farkli bir arama deneyin</Text>
+        </View>
+      ) : null}
+
+      {/* Confirm Button */}
+      {selectedLocation && (
+        <View style={styles.footer}>
+          <Pressable style={styles.confirmButton} onPress={handleConfirm}>
+            <Icon name="checkmark" size={20} color="#FFFFFF" />
+            <Text style={styles.confirmButtonText}>Konumu Onayla</Text>
+          </Pressable>
+        </View>
+      )}
     </SafeAreaView>
   );
 };
@@ -220,80 +277,129 @@ const styles = StyleSheet.create({
   headerRight: {
     width: 40,
   },
-  mapContainer: {
-    flex: 1,
-    position: 'relative',
+  searchContainer: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
   },
-  map: {
-    flex: 1,
-  },
-  myLocationButton: {
-    position: 'absolute',
-    right: 16,
-    top: 16,
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#FFFFFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  infoCard: {
-    position: 'absolute',
-    top: 16,
-    left: 16,
-    right: 80,
+  searchInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    gap: 10,
   },
-  infoText: {
-    fontSize: 14,
-    color: '#374151',
-    marginLeft: 8,
+  searchInput: {
+    flex: 1,
+    paddingVertical: 14,
+    fontSize: 16,
+    color: '#1F2937',
   },
-  footer: {
-    padding: 20,
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-    backgroundColor: '#FFFFFF',
+  listContent: {
+    paddingHorizontal: 16,
   },
-  selectedInfo: {
+  locationItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+    gap: 12,
   },
-  selectedTextContainer: {
-    marginLeft: 12,
+  locationItemContent: {
     flex: 1,
   },
-  selectedLabel: {
-    fontSize: 12,
-    color: '#6B7280',
-  },
-  selectedAddress: {
+  locationItemName: {
     fontSize: 15,
     fontWeight: '600',
     color: '#1F2937',
+  },
+  locationItemAddress: {
+    fontSize: 13,
+    color: '#6B7280',
     marginTop: 2,
   },
-  noSelectionText: {
+  recentContainer: {
+    flex: 1,
+    padding: 16,
+  },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6B7280',
+    marginBottom: 12,
+    marginTop: 8,
+  },
+  recentItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    gap: 12,
+  },
+  recentItemText: {
     fontSize: 15,
+    color: '#1F2937',
+  },
+  selectedSection: {
+    marginBottom: 20,
+  },
+  selectedCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ECFDF5',
+    borderRadius: 12,
+    padding: 14,
+    gap: 12,
+  },
+  selectedContent: {
+    flex: 1,
+  },
+  selectedName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#059669',
+  },
+  selectedCoords: {
+    fontSize: 12,
+    color: '#10B981',
+    marginTop: 2,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+  },
+  emptyText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#6B7280',
+    marginTop: 12,
+  },
+  emptySubtext: {
+    fontSize: 14,
     color: '#9CA3AF',
-    marginLeft: 12,
+    marginTop: 4,
+  },
+  footer: {
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+  confirmButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#6C63FF',
+    paddingVertical: 16,
+    borderRadius: 12,
+    gap: 8,
+  },
+  confirmButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 });
 

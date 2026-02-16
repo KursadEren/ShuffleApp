@@ -1,14 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import MeetupCard from '../components/MeetupCard';
+import { shuffleApi } from '../api';
 
 const TABS = [
   { id: 'active', label: 'Aktif', icon: 'clock-outline' },
@@ -18,12 +21,119 @@ const TABS = [
 const MyShufflesScreen = () => {
   const [activeTab, setActiveTab] = useState('active');
   const [shuffles, setShuffles] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState(null);
+
+  const fetchMyShuffles = useCallback(async (isRefresh = false) => {
+    try {
+      if (isRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+      setError(null);
+
+      const response = await shuffleApi.getMyShuffles();
+      console.log('My Shuffles response:', JSON.stringify(response, null, 2));
+
+      // Backend response formatı: { success: true, data: { posts: [...] } }
+      let shuffleList = [];
+      if (response?.data?.posts) {
+        shuffleList = response.data.posts;
+      } else if (response?.data?.shuffles) {
+        shuffleList = response.data.shuffles;
+      } else if (Array.isArray(response?.data)) {
+        shuffleList = response.data;
+      } else if (Array.isArray(response)) {
+        shuffleList = response;
+      }
+
+      console.log('Shuffle list:', shuffleList);
+
+      // Backend'den gelen veriyi map'le
+      const mappedShuffles = shuffleList.map((item) => ({
+        id: item.id,
+        status: mapStatus(item.status),
+        totalSlots: item.maxParticipants || 5,
+        joinedCount: item.currentParticipants || item.members?.length || 1,
+        location: item.locationName || 'Konum belirtilmedi',
+        distance: null,
+        purpose: mapActivityType(item.activityType),
+        scheduledAt: item.scheduledAt,
+        createdAt: item.createdAt,
+        spotsLeft: item.spotsLeft,
+        isCreator: item.isCreator,
+      }));
+
+      setShuffles(mappedShuffles);
+    } catch (err) {
+      console.error('Shuffle fetch error:', err);
+      console.error('Full error response:', JSON.stringify(err.response?.data, null, 2));
+
+      const errorData = err.response?.data;
+      if (errorData?.errors) {
+        // Validation errors
+        console.error('Validation errors:', errorData.errors);
+        setError('Validation hatasi: ' + JSON.stringify(errorData.errors));
+      } else if (err.response?.status === 404) {
+        setError('Endpoint bulunamadi');
+      } else {
+        setError(errorData?.message || 'Bulusmalar yuklenemedi');
+      }
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  // Status mapping
+  const mapStatus = (backendStatus) => {
+    switch (backendStatus) {
+      case 'PENDING':
+      case 'WAITING':
+        return 'waiting';
+      case 'ACTIVE':
+      case 'CONFIRMED':
+      case 'IN_PROGRESS':
+        return 'active';
+      case 'COMPLETED':
+      case 'FINISHED':
+        return 'completed';
+      case 'CANCELLED':
+        return 'cancelled';
+      default:
+        return 'waiting';
+    }
+  };
+
+  // Activity type mapping
+  const mapActivityType = (activityType) => {
+    const types = {
+      COFFEE: 'Kahve icmek',
+      WALK: 'Yuruyus yapmak',
+      DINNER: 'Yemek yemek',
+      DRINKS: 'Icki icmek',
+      SPORTS: 'Spor yapmak',
+      CULTURAL: 'Kultur/Sanat',
+      OTHER: 'Diger',
+    };
+    return types[activityType] || activityType || 'Bulusma';
+  };
+
+  useEffect(() => {
+    fetchMyShuffles();
+  }, [fetchMyShuffles]);
+
+  const onRefresh = () => {
+    fetchMyShuffles(true);
+  };
 
   const filteredShuffles = shuffles.filter((shuffle) => {
     if (activeTab === 'active') {
       return shuffle.status === 'waiting' || shuffle.status === 'active';
     }
-    return shuffle.status === 'completed';
+    return shuffle.status === 'completed' || shuffle.status === 'cancelled';
   });
 
   const getStatusBadge = (status) => {
@@ -77,8 +187,31 @@ const MyShufflesScreen = () => {
         style={styles.content}
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#6C63FF']}
+            tintColor="#6C63FF"
+          />
+        }
       >
-        {filteredShuffles.length === 0 ? (
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#6C63FF" />
+            <Text style={styles.loadingText}>Bulusmalar yukleniyor...</Text>
+          </View>
+        ) : error ? (
+          <View style={styles.emptyContainer}>
+            <Icon name="alert-circle-outline" size={64} color="#EF4444" />
+            <Text style={styles.emptyTitle}>Hata olustu</Text>
+            <Text style={styles.emptySubtitle}>{error}</Text>
+            <TouchableOpacity style={styles.retryButton} onPress={() => fetchMyShuffles()}>
+              <Icon name="refresh" size={20} color="#FFFFFF" />
+              <Text style={styles.retryButtonText}>Tekrar Dene</Text>
+            </TouchableOpacity>
+          </View>
+        ) : filteredShuffles.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Icon name="cards-outline" size={64} color="#D1D5DB" />
             <Text style={styles.emptyTitle}>
@@ -117,7 +250,8 @@ const MyShufflesScreen = () => {
                   joinedCount={shuffle.joinedCount}
                   location={shuffle.location}
                   distance={shuffle.distance}
-                  purpose={shuffle.purpose}
+                  customPurpose={shuffle.purpose}
+                  scheduledAt={shuffle.scheduledAt}
                   onPress={() => console.log('Shuffle detay:', shuffle.id)}
                 />
               </View>
@@ -224,6 +358,32 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     marginTop: 8,
     textAlign: 'center',
+  },
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginTop: 12,
+  },
+  retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#6C63FF',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    marginTop: 20,
+    gap: 8,
+  },
+  retryButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
 });
 
