@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -17,15 +17,16 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import Dice from '../components/Dice';
-import { matchingApi } from '../api';
+import { shuffleApi } from '../api';
+import { LiquidMergeAnimation } from '../animations';
 
 const MEETUP_PURPOSES = [
-  { id: 'coffee', label: 'Kahve icmek', icon: 'coffee' },
-  { id: 'walk', label: 'Yuruyus yapmak', icon: 'walk' },
-  { id: 'food', label: 'Yemek yemek', icon: 'food' },
-  { id: 'chat', label: 'Sohbet etmek', icon: 'chat' },
-  { id: 'study', label: 'Birlikte calismak', icon: 'book-open-variant' },
-  { id: 'sport', label: 'Spor yapmak', icon: 'run' },
+  { id: 'coffee', label: 'Kahve icmek', icon: 'coffee', activityType: 'COFFEE' },
+  { id: 'walk', label: 'Yuruyus yapmak', icon: 'walk', activityType: 'WALK' },
+  { id: 'food', label: 'Yemek yemek', icon: 'food', activityType: 'DINNER' },
+  { id: 'drinks', label: 'Icki icmek', icon: 'glass-cocktail', activityType: 'DRINKS' },
+  { id: 'sport', label: 'Spor yapmak', icon: 'run', activityType: 'SPORTS' },
+  { id: 'cultural', label: 'Kultur/Sanat', icon: 'palette', activityType: 'CULTURAL' },
 ];
 
 const TIME_OPTIONS = [
@@ -81,7 +82,18 @@ const HomeScreen = () => {
   const dateOptions = getDateOptions();
 
   // Debounce search
-  const debounceRef = React.useRef(null);
+  const debounceRef = useRef(null);
+
+  // Animation ref
+  const animationRef = useRef(null);
+
+  const handleAnimationComplete = () => {
+    Alert.alert(
+      'Basarili!',
+      'Shuffle olusturuldu. Katilimcilar beklenirken bildirim alacaksin.',
+      [{ text: 'Tamam' }]
+    );
+  };
 
   const searchLocation = useCallback(async (query) => {
     if (query.length < 2) {
@@ -177,38 +189,58 @@ const HomeScreen = () => {
       return;
     }
 
-    const selectedDateObj = dateOptions.find(d => d.id === selectedDate)?.fullDate;
+    // Tarih objesi oluştur (orijinali mutate etmemek için kopyala)
+    const selectedDateOption = dateOptions.find(d => d.id === selectedDate);
+    const scheduledDate = new Date(selectedDateOption.fullDate);
     const [hours, minutes] = selectedTime.split(':');
-    selectedDateObj.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
+    scheduledDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
 
-    const matchingData = {
-      location: {
-        name: selectedLocation.name,
-        latitude: selectedLocation.lat,
-        longitude: selectedLocation.lon,
-      },
-      participantCount,
-      scheduledAt: selectedDateObj.toISOString(),
-      purpose: selectedPurpose || customPurpose.trim(),
+    // activityType belirleme
+    const selectedPurposeObj = MEETUP_PURPOSES.find(p => p.id === selectedPurpose);
+    const activityType = selectedPurposeObj?.activityType || 'OTHER';
+
+    // Backend'in beklediği format (ShufflePost modeli)
+    const shuffleData = {
+      activityType,                                    // enum: COFFEE, WALK, etc.
+      locationName: String(selectedLocation.name),     // String (2-100 karakter)
+      latitude: Number(selectedLocation.lat),          // Float
+      longitude: Number(selectedLocation.lon),         // Float
+      scheduledAt: scheduledDate.toISOString(),        // DateTime ISO format
+      minParticipants: 3,                              // Int (3-10)
+      maxParticipants: Number(participantCount),       // Int (3-10)
     };
+
+    // description opsiyonel - sadece doluysa ekle
+    if (customPurpose.trim()) {
+      shuffleData.description = customPurpose.trim();
+    }
 
     setIsSubmitting(true);
 
     try {
-      console.log('Starting matching with:', matchingData);
-      const response = await matchingApi.joinQueue(matchingData);
-      console.log('Matching response:', response);
+      console.log('Creating shuffle with:', shuffleData);
+      const response = await shuffleApi.create(shuffleData);
+      console.log('Shuffle response:', response);
 
+      // Close modal and reset form
       setModalVisible(false);
-      closeModal();
+      setSearchQuery('');
+      setSelectedLocation(null);
+      setSearchResults([]);
+      setShowResults(false);
+      setParticipantCount(3);
+      setSelectedDate(null);
+      setSelectedTime(null);
+      setSelectedPurpose(null);
+      setCustomPurpose('');
+      setShowCustomInput(false);
 
-      Alert.alert(
-        'Basarili!',
-        'Eslesme kuyruguna katildin. Grup tamamlaninca bildirim alacaksin.',
-        [{ text: 'Tamam' }]
-      );
+      // Play the liquid merge animation
+      setTimeout(() => {
+        animationRef.current?.play();
+      }, 300);
     } catch (error) {
-      console.error('Matching error:', error);
+      console.error('Shuffle error:', error);
       const errorMessage = error.response?.data?.message || 'Bir hata olustu. Lutfen tekrar deneyin.';
       Alert.alert('Hata', errorMessage);
     } finally {
@@ -281,6 +313,9 @@ const HomeScreen = () => {
         <Text style={[styles.title, { fontSize: titleSize }]}>SHUFFLE</Text>
         <Text style={styles.subtitle}>Yeni insanlarla tanisin</Text>
       </View>
+
+      {/* Liquid Merge Animation */}
+      <LiquidMergeAnimation ref={animationRef} onComplete={handleAnimationComplete} />
 
       <Modal
         animationType="slide"
