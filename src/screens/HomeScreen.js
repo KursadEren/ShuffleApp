@@ -18,7 +18,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import Dice from '../components/Dice';
 import { shuffleApi } from '../api';
-import { LiquidMergeAnimation } from '../animations';
 
 const MEETUP_PURPOSES = [
   { id: 'coffee', label: 'Kahve icmek', icon: 'coffee', activityType: 'COFFEE' },
@@ -84,8 +83,8 @@ const HomeScreen = () => {
   // Debounce search
   const debounceRef = useRef(null);
 
-  // Animation ref
-  const animationRef = useRef(null);
+  // Dice ref for animation
+  const diceRef = useRef(null);
 
   const handleAnimationComplete = () => {
     Alert.alert(
@@ -199,15 +198,15 @@ const HomeScreen = () => {
     const selectedPurposeObj = MEETUP_PURPOSES.find(p => p.id === selectedPurpose);
     const activityType = selectedPurposeObj?.activityType || 'OTHER';
 
-    // Backend'in beklediği format (ShufflePost modeli)
+    // Backend ShufflePost modeline uygun format
     const shuffleData = {
-      activityType,                                    // enum: COFFEE, WALK, etc.
-      locationName: String(selectedLocation.name),     // String (2-100 karakter)
-      latitude: Number(selectedLocation.lat),          // Float
-      longitude: Number(selectedLocation.lon),         // Float
-      scheduledAt: scheduledDate.toISOString(),        // DateTime ISO format
-      minParticipants: 3,                              // Int (3-10)
-      maxParticipants: Number(participantCount),       // Int (3-10)
+      activityType,
+      locationName: String(selectedLocation.name),
+      latitude: Number(selectedLocation.lat),
+      longitude: Number(selectedLocation.lon),
+      scheduledAt: scheduledDate.toISOString(),
+      minParticipants: 3,
+      maxParticipants: Number(participantCount),
     };
 
     // description opsiyonel - sadece doluysa ekle
@@ -235,9 +234,9 @@ const HomeScreen = () => {
       setCustomPurpose('');
       setShowCustomInput(false);
 
-      // Play the liquid merge animation
+      // Play the dice merge animation
       setTimeout(() => {
-        animationRef.current?.play();
+        diceRef.current?.playMerge();
       }, 300);
     } catch (error) {
       console.error('Shuffle error:', error);
@@ -308,14 +307,16 @@ const HomeScreen = () => {
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.content}>
         <View style={styles.diceContainer}>
-          <Dice size={diceSize} onPress={handleDicePress} />
+          <Dice
+            ref={diceRef}
+            size={diceSize}
+            onPress={handleDicePress}
+            onMergeComplete={handleAnimationComplete}
+          />
         </View>
         <Text style={[styles.title, { fontSize: titleSize }]}>SHUFFLE</Text>
         <Text style={styles.subtitle}>Yeni insanlarla tanisin</Text>
       </View>
-
-      {/* Liquid Merge Animation */}
-      <LiquidMergeAnimation ref={animationRef} onComplete={handleAnimationComplete} />
 
       <Modal
         animationType="slide"
