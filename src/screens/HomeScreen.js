@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -13,10 +13,14 @@ import {
   ActivityIndicator,
   FlatList,
   Alert,
+  RefreshControl,
+  PermissionsAndroid,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import Geolocation from '@react-native-community/geolocation';
 import Dice from '../components/Dice';
+import MeetupCard from '../components/MeetupCard';
 import { shuffleApi } from '../api';
 
 const MEETUP_PURPOSES = [
@@ -59,11 +63,22 @@ const getDateOptions = () => {
   return options;
 };
 
-const HomeScreen = () => {
-  const { width } = useWindowDimensions();
+const FILTER_OPTIONS = [
+  { id: 'all', label: 'Tumu', icon: 'apps' },
+  { id: 'COFFEE', label: 'Kahve', icon: 'coffee' },
+  { id: 'WALK', label: 'Yuruyus', icon: 'walk' },
+  { id: 'DINNER', label: 'Yemek', icon: 'food' },
+  { id: 'DRINKS', label: 'Icki', icon: 'glass-cocktail' },
+  { id: 'SPORTS', label: 'Spor', icon: 'run' },
+  { id: 'CULTURAL', label: 'Kultur', icon: 'palette' },
+];
+
+const HomeScreen = ({ navigation }) => {
+  const { width, height } = useWindowDimensions();
   const diceSize = Math.min(width * 0.3, 120);
   const titleSize = Math.min(width * 0.08, 32);
 
+  // Modal states
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedLocation, setSelectedLocation] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -78,10 +93,200 @@ const HomeScreen = () => {
   const [selectedTime, setSelectedTime] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Feed states
+  const [feed, setFeed] = useState([]);
+  const [feedLoading, setFeedLoading] = useState(true);
+  const [feedRefreshing, setFeedRefreshing] = useState(false);
+  const [activeFilter, setActiveFilter] = useState('all');
+  const [userLocation, setUserLocation] = useState(null);
+  const [locationError, setLocationError] = useState(null);
+
   const dateOptions = getDateOptions();
 
   // Debounce search
   const debounceRef = useRef(null);
+
+  // Get user location
+  const getUserLocation = useCallback(async () => {
+    try {
+      // Android için izin iste
+      if (Platform.OS === 'android') {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+          {
+            title: 'Konum İzni',
+            message: 'Yakınındaki shuffle\'ları görebilmek için konum izni gerekli.',
+            buttonNeutral: 'Daha Sonra',
+            buttonNegative: 'İptal',
+            buttonPositive: 'Tamam',
+          }
+        );
+        if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+          setLocationError('Konum izni verilmedi');
+          return null;
+        }
+      }
+
+      return new Promise((resolve, reject) => {
+        Geolocation.getCurrentPosition(
+          (position) => {
+            const location = {
+              latitude: position.coords.latitude,
+              longitude: position.coords.longitude,
+            };
+            setUserLocation(location);
+            setLocationError(null);
+            resolve(location);
+          },
+          (error) => {
+            console.error('Location error:', error);
+            setLocationError('Konum alınamadı');
+            reject(error);
+          },
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
+        );
+      });
+    } catch (error) {
+      console.error('Location permission error:', error);
+      setLocationError('Konum izni hatası');
+      return null;
+    }
+  }, []);
+
+  // Fetch feed
+  const fetchFeed = useCallback(async (isRefresh = false, location = null) => {
+    try {
+      if (isRefresh) {
+        setFeedRefreshing(true);
+      } else {
+        setFeedLoading(true);
+      }
+
+      // Konum al (varsa kullan, yoksa yeni al)
+      let coords = location || userLocation;
+      if (!coords) {
+        try {
+          coords = await getUserLocation();
+        } catch (e) {
+          // Konum alınamadı, Sakarya koordinatlarını varsayılan olarak kullan (test için)
+          console.log('Could not get location, using default Sakarya coordinates');
+          coords = { latitude: 40.741, longitude: 30.401 };
+        }
+      }
+
+      const params = {
+        page: 1,
+        limit: 20,
+      };
+
+      // Konum varsa ekle
+      if (coords) {
+        params.latitude = coords.latitude;
+        params.longitude = coords.longitude;
+        params.radius = 10000; // 10km
+      }
+
+      if (activeFilter !== 'all') {
+        params.activityType = activeFilter;
+      }
+
+      console.log('Fetching feed with params:', JSON.stringify(params));
+      const response = await shuffleApi.getFeed(params);
+      console.log('Feed response:', JSON.stringify(response, null, 2));
+      console.log('Feed response type:', typeof response);
+      console.log('Feed data:', response?.data);
+      console.log('Feed posts:', response?.data?.posts);
+
+      // Parse response - backend format: { success: true, data: { posts: [...] } }
+      let shuffleList = [];
+      if (response?.data?.posts) {
+        shuffleList = response.data.posts;
+      } else if (response?.data?.shuffles) {
+        shuffleList = response.data.shuffles;
+      } else if (Array.isArray(response?.data)) {
+        shuffleList = response.data;
+      } else if (Array.isArray(response)) {
+        shuffleList = response;
+      }
+
+      // Map to frontend format
+      const mappedFeed = shuffleList.map((item) => ({
+        id: item.id,
+        totalSlots: item.maxParticipants || 5,
+        joinedCount: item.currentParticipants || item.members?.length || 1,
+        location: item.locationName || 'Konum belirtilmedi',
+        // Backend metre gönderiyor, km'ye çevir
+        distance: item.distance ? item.distance / 1000 : null,
+        activityType: item.activityType,
+        purpose: mapActivityType(item.activityType),
+        scheduledAt: item.scheduledAt,
+        createdAt: item.createdAt,
+        spotsLeft: item.spotsLeft,
+        creatorId: item.creatorId,
+      }));
+
+      setFeed(mappedFeed);
+    } catch (error) {
+      console.error('Feed fetch error:', error);
+      console.error('Error response:', error.response?.data);
+      // 400 hatası - muhtemelen konum gerekiyor, boş liste göster
+      setFeed([]);
+    } finally {
+      setFeedLoading(false);
+      setFeedRefreshing(false);
+    }
+  }, [activeFilter, userLocation, getUserLocation]);
+
+  // Activity type mapping
+  const mapActivityType = (activityType) => {
+    const types = {
+      COFFEE: 'Kahve icmek',
+      WALK: 'Yuruyus yapmak',
+      DINNER: 'Yemek yemek',
+      DRINKS: 'Icki icmek',
+      SPORTS: 'Spor yapmak',
+      CULTURAL: 'Kultur/Sanat',
+      OTHER: 'Diger',
+    };
+    return types[activityType] || activityType || 'Bulusma';
+  };
+
+  // Fetch feed on mount and filter change
+  useEffect(() => {
+    fetchFeed();
+  }, [fetchFeed]);
+
+  const onRefresh = () => {
+    fetchFeed(true);
+  };
+
+  const handleFilterChange = (filterId) => {
+    setActiveFilter(filterId);
+  };
+
+  const handleShufflePress = (shuffle) => {
+    // TODO: Navigate to shuffle detail
+    console.log('Shuffle pressed:', shuffle.id);
+    Alert.alert(
+      shuffle.purpose,
+      `${shuffle.location}\n${shuffle.joinedCount}/${shuffle.totalSlots} Katilimci`,
+      [
+        { text: 'Kapat' },
+        { text: 'Katil', onPress: () => handleJoinShuffle(shuffle.id) },
+      ]
+    );
+  };
+
+  const handleJoinShuffle = async (shuffleId) => {
+    try {
+      await shuffleApi.join(shuffleId);
+      Alert.alert('Basarili', 'Shuffle\'a katildin!');
+      fetchFeed(); // Refresh feed
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || 'Katilirken bir hata olustu';
+      Alert.alert('Hata', errorMessage);
+    }
+  };
 
   // Dice ref for animation
   const diceRef = useRef(null);
@@ -303,20 +508,142 @@ const HomeScreen = () => {
     </TouchableOpacity>
   );
 
+  const renderFeedItem = ({ item }) => (
+    <MeetupCard
+      totalSlots={item.totalSlots}
+      joinedCount={item.joinedCount}
+      location={item.location}
+      distance={item.distance}
+      customPurpose={item.purpose}
+      scheduledAt={item.scheduledAt}
+      onPress={() => handleShufflePress(item)}
+      style={styles.feedCard}
+    />
+  );
+
+  const renderFilterChip = (filter) => (
+    <TouchableOpacity
+      key={filter.id}
+      style={[
+        styles.filterChip,
+        activeFilter === filter.id && styles.filterChipActive,
+      ]}
+      onPress={() => handleFilterChange(filter.id)}
+    >
+      <Icon
+        name={filter.icon}
+        size={18}
+        color={activeFilter === filter.id ? '#FFFFFF' : '#6C63FF'}
+      />
+      <Text
+        style={[
+          styles.filterChipText,
+          activeFilter === filter.id && styles.filterChipTextActive,
+        ]}
+      >
+        {filter.label}
+      </Text>
+    </TouchableOpacity>
+  );
+
+  const ListHeader = () => (
+    <>
+      {/* Hero Section - Original Dice Style */}
+      <View style={[styles.heroSection, { height: height * 0.875 }]}>
+        {/* Centered Content */}
+        <View style={styles.heroCenterContent}>
+          <View style={styles.diceContainer}>
+            <Dice
+              ref={diceRef}
+              size={diceSize}
+              onPress={handleDicePress}
+              onMergeComplete={handleAnimationComplete}
+            />
+          </View>
+          <Text style={[styles.title, { fontSize: titleSize }]}>SHUFFLE</Text>
+          <Text style={styles.subtitle}>Yeni insanlarla tanisin</Text>
+        </View>
+
+        {/* Scroll Indicator - At Bottom */}
+        <View style={styles.scrollIndicator}>
+          <Text style={styles.scrollIndicatorText}>Yakinindaki Shuffle'lar</Text>
+          <Icon name="chevron-down" size={24} color="#6C63FF" />
+        </View>
+      </View>
+
+      {/* Filter Section */}
+      <View style={styles.filterSection}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterScrollContent}
+        >
+          {FILTER_OPTIONS.map(renderFilterChip)}
+        </ScrollView>
+      </View>
+    </>
+  );
+
+  const ListEmpty = () => (
+    <View style={styles.emptyContainer}>
+      {feedLoading ? (
+        <>
+          <ActivityIndicator size="large" color="#6C63FF" />
+          <Text style={styles.emptyText}>Yuklenıyor...</Text>
+        </>
+      ) : locationError || !userLocation ? (
+        <>
+          <Icon name="map-marker-off" size={64} color="#F59E0B" />
+          <Text style={styles.emptyTitle}>Konum gerekli</Text>
+          <Text style={styles.emptySubtext}>
+            Yakınındaki shuffle'ları görebilmek için konum izni vermen gerekiyor.
+          </Text>
+          <TouchableOpacity
+            style={[styles.emptyButton, { backgroundColor: '#F59E0B' }]}
+            onPress={async () => {
+              const loc = await getUserLocation();
+              if (loc) {
+                fetchFeed(false, loc);
+              }
+            }}
+          >
+            <Icon name="crosshairs-gps" size={20} color="#FFFFFF" />
+            <Text style={styles.emptyButtonText}>Konum İzni Ver</Text>
+          </TouchableOpacity>
+        </>
+      ) : (
+        <>
+          <Icon name="cards-outline" size={64} color="#D1D5DB" />
+          <Text style={styles.emptyTitle}>Yakininda shuffle yok</Text>
+          <Text style={styles.emptySubtext}>Ilk shuffle'i sen olustur!</Text>
+          <TouchableOpacity style={styles.emptyButton} onPress={handleDicePress}>
+            <Icon name="plus" size={20} color="#FFFFFF" />
+            <Text style={styles.emptyButtonText}>Shuffle Olustur</Text>
+          </TouchableOpacity>
+        </>
+      )}
+    </View>
+  );
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.content}>
-        <View style={styles.diceContainer}>
-          <Dice
-            ref={diceRef}
-            size={diceSize}
-            onPress={handleDicePress}
-            onMergeComplete={handleAnimationComplete}
+      <FlatList
+        data={feed}
+        renderItem={renderFeedItem}
+        keyExtractor={(item) => item.id}
+        ListHeaderComponent={ListHeader}
+        ListEmptyComponent={ListEmpty}
+        contentContainerStyle={styles.feedContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={feedRefreshing}
+            onRefresh={onRefresh}
+            colors={['#6C63FF']}
+            tintColor="#6C63FF"
           />
-        </View>
-        <Text style={[styles.title, { fontSize: titleSize }]}>SHUFFLE</Text>
-        <Text style={styles.subtitle}>Yeni insanlarla tanisin</Text>
-      </View>
+        }
+      />
 
       <Modal
         animationType="slide"
@@ -595,9 +922,16 @@ const HomeScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#F9FAFB',
+  },
+  feedContent: {
+    paddingBottom: 20,
+  },
+  // Hero Section
+  heroSection: {
     backgroundColor: '#FFFFFF',
   },
-  content: {
+  heroCenterContent: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
@@ -614,6 +948,99 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#6B7280',
     marginTop: 8,
+  },
+  scrollIndicator: {
+    alignItems: 'center',
+    paddingBottom: 20,
+  },
+  scrollIndicatorText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6C63FF',
+    marginBottom: 4,
+  },
+  // Filter Section
+  filterSection: {
+    paddingTop: 20,
+    paddingBottom: 12,
+  },
+  filterTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1F2937',
+    paddingHorizontal: 20,
+    marginBottom: 12,
+  },
+  filterScrollContent: {
+    paddingHorizontal: 20,
+    gap: 8,
+  },
+  filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    gap: 6,
+  },
+  filterChipActive: {
+    backgroundColor: '#6C63FF',
+    borderColor: '#6C63FF',
+  },
+  filterChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6C63FF',
+  },
+  filterChipTextActive: {
+    color: '#FFFFFF',
+  },
+  // Feed
+  feedCard: {
+    marginHorizontal: 20,
+    marginBottom: 16,
+  },
+  // Empty State
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+    paddingHorizontal: 40,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#6B7280',
+    marginTop: 16,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  emptyText: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginTop: 12,
+  },
+  emptyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#6C63FF',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    marginTop: 20,
+    gap: 8,
+  },
+  emptyButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
   modalOverlay: {
     flex: 1,

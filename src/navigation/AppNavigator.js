@@ -4,6 +4,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import Icon from 'react-native-vector-icons/Ionicons';
+import MCIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
 import HomeScreen from '../screens/HomeScreen';
@@ -11,6 +12,7 @@ import MyShufflesScreen from '../screens/MyShufflesScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import EditProfileScreen from '../screens/EditProfileScreen';
 import LocationPickerScreen from '../screens/LocationPickerScreen';
+import GroupChatScreen from '../screens/GroupChatScreen';
 import { ACCESS_TOKEN_KEY } from '../constants/config';
 
 const Stack = createNativeStackNavigator();
@@ -42,7 +44,7 @@ const MainTabs = () => {
         options={{
           tabBarLabel: "Shuffle'larım",
           tabBarIcon: ({ color, size }) => (
-            <Icon name="shuffle" size={size} color={color} />
+            <MCIcon name="dice-multiple" size={size} color={color} />
           ),
         }}
       />
@@ -113,6 +115,14 @@ const AppNavigator = () => {
           presentation: 'card',
           animation: 'slide_from_right',
           gestureEnabled: false,
+        }}
+      />
+      <Stack.Screen
+        name="GroupChat"
+        component={GroupChatScreen}
+        options={{
+          presentation: 'card',
+          animation: 'slide_from_right',
         }}
       />
     </Stack.Navigator>

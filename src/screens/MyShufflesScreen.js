@@ -7,7 +7,9 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
+  Alert,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import MeetupCard from '../components/MeetupCard';
@@ -19,10 +21,40 @@ const TABS = [
 ];
 
 const MyShufflesScreen = () => {
+  const navigation = useNavigation();
   const [activeTab, setActiveTab] = useState('active');
   const [shuffles, setShuffles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Shuffle'a tıklandığında
+  const handleShufflePress = (shuffle) => {
+    if (shuffle.status === 'active') {
+      // Aktif shuffle - Chat'e git
+      navigation.navigate('GroupChat', {
+        shuffleId: shuffle.id,
+        shuffleData: {
+          location: shuffle.location,
+          scheduledAt: shuffle.scheduledAt,
+          purpose: shuffle.purpose,
+        },
+      });
+    } else if (shuffle.status === 'waiting') {
+      // Bekleyen shuffle - Bilgi göster
+      Alert.alert(
+        'Katilimci Bekleniyor',
+        `${shuffle.joinedCount}/${shuffle.totalSlots} kisi katildi. Grup tamamlaninca sohbet acilacak.`,
+        [{ text: 'Tamam' }]
+      );
+    } else {
+      // Tamamlanan shuffle - Detay göster
+      Alert.alert(
+        'Bulusma Tamamlandi',
+        `${shuffle.location} konumunda gerceklesen bulusma.`,
+        [{ text: 'Tamam' }]
+      );
+    }
+  };
   const [error, setError] = useState(null);
 
   const fetchMyShuffles = useCallback(async (isRefresh = false) => {
@@ -252,7 +284,7 @@ const MyShufflesScreen = () => {
                   distance={shuffle.distance}
                   customPurpose={shuffle.purpose}
                   scheduledAt={shuffle.scheduledAt}
-                  onPress={() => console.log('Shuffle detay:', shuffle.id)}
+                  onPress={() => handleShufflePress(shuffle)}
                 />
               </View>
             );

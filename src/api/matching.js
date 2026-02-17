@@ -62,4 +62,28 @@ export const shuffleApi = {
     const response = await apiClient.post(`/shuffles/${id}/leave`);
     return response.data;
   },
+
+  // Chat mesajlarını getir
+  getMessages: async (shuffleId, params = {}) => {
+    const response = await apiClient.get(`/shuffles/${shuffleId}/chat/messages`, {
+      params: {
+        page: params.page || 1,
+        limit: params.limit || 50,
+        ...params,
+      },
+    });
+    return response.data;
+  },
+
+  // Chat mesajı gönder
+  sendMessage: async (shuffleId, data) => {
+    const response = await apiClient.post(`/shuffles/${shuffleId}/chat/messages`, data);
+    return response.data;
+  },
+
+  // Chat katılımcılarını getir
+  getParticipants: async (shuffleId) => {
+    const response = await apiClient.get(`/shuffles/${shuffleId}/participants`);
+    return response.data;
+  },
 };
