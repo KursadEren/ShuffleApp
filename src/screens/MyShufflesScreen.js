@@ -13,30 +13,33 @@ import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import MeetupCard from '../components/MeetupCard';
+import StatusBadge from '../components/StatusBadge';
 import { shuffleApi } from '../api';
 
 const TABS = [
-  { id: 'active', label: 'Aktif', icon: 'clock-outline' },
-  { id: 'completed', label: 'Tamamlanan', icon: 'check-circle-outline' },
+  { id: 'chats', label: 'Sohbetlerim', icon: 'chat-outline' },
+  { id: 'joined', label: 'Katıldıklarım', icon: 'account-plus-outline' },
+  { id: 'created', label: 'Oluşturduklarım', icon: 'plus-circle-outline' },
 ];
 
 const MyShufflesScreen = () => {
   const navigation = useNavigation();
-  const [activeTab, setActiveTab] = useState('active');
+  const [activeTab, setActiveTab] = useState('chats');
   const [shuffles, setShuffles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   // Shuffle'a tıklandığında
   const handleShufflePress = (shuffle) => {
-    if (shuffle.status === 'active') {
-      // Aktif shuffle - Chat'e git
+    if (shuffle.status === 'active' || shuffle.status === 'completed') {
+      // Aktif veya tamamlanmış shuffle - Chat'e git
       navigation.navigate('GroupChat', {
         shuffleId: shuffle.id,
         shuffleData: {
           location: shuffle.location,
           scheduledAt: shuffle.scheduledAt,
           purpose: shuffle.purpose,
+          status: shuffle.status,
         },
       });
     } else if (shuffle.status === 'waiting') {
@@ -44,13 +47,6 @@ const MyShufflesScreen = () => {
       Alert.alert(
         'Katilimci Bekleniyor',
         `${shuffle.joinedCount}/${shuffle.totalSlots} kisi katildi. Grup tamamlaninca sohbet acilacak.`,
-        [{ text: 'Tamam' }]
-      );
-    } else {
-      // Tamamlanan shuffle - Detay göster
-      Alert.alert(
-        'Bulusma Tamamlandi',
-        `${shuffle.location} konumunda gerceklesen bulusma.`,
         [{ text: 'Tamam' }]
       );
     }
@@ -89,8 +85,8 @@ const MyShufflesScreen = () => {
         status: mapStatus(item.status),
         totalSlots: item.maxParticipants || 5,
         joinedCount: item.currentParticipants || item.members?.length || 1,
-        location: item.locationName || 'Konum belirtilmedi',
-        distance: null,
+        location: item.locationName || item.location?.name || item.location?.address || 'Konum belirtilmedi',
+        distance: item.distance ? item.distance / 1000 : null,
         purpose: mapActivityType(item.activityType),
         scheduledAt: item.scheduledAt,
         createdAt: item.createdAt,
@@ -121,10 +117,13 @@ const MyShufflesScreen = () => {
 
   // Status mapping
   const mapStatus = (backendStatus) => {
+    console.log('Backend status:', backendStatus);
     switch (backendStatus) {
       case 'PENDING':
-      case 'WAITING':
         return 'waiting';
+      case 'WAITING':
+      case 'FULL':
+      case 'READY':
       case 'ACTIVE':
       case 'CONFIRMED':
       case 'IN_PROGRESS':
@@ -135,7 +134,8 @@ const MyShufflesScreen = () => {
       case 'CANCELLED':
         return 'cancelled';
       default:
-        return 'waiting';
+        console.log('Unknown status, defaulting to active:', backendStatus);
+        return 'active';
     }
   };
 
@@ -162,25 +162,22 @@ const MyShufflesScreen = () => {
   };
 
   const filteredShuffles = shuffles.filter((shuffle) => {
-    if (activeTab === 'active') {
-      return shuffle.status === 'waiting' || shuffle.status === 'active';
+    switch (activeTab) {
+      case 'chats':
+        // Sohbet açılabilen shuffle'lar (aktif veya tamamlanmış)
+        return shuffle.status === 'active' || shuffle.status === 'completed';
+      case 'joined':
+        // Başkasının oluşturduğu, katıldığım shuffle'lar
+        return !shuffle.isCreator;
+      case 'created':
+        // Benim oluşturduğum shuffle'lar
+        return shuffle.isCreator;
+      default:
+        return true;
     }
-    return shuffle.status === 'completed' || shuffle.status === 'cancelled';
   });
 
-  const getStatusBadge = (status) => {
-    switch (status) {
-      case 'waiting':
-        return { label: 'Katilimci Bekleniyor', color: '#F59E0B', bg: '#FEF3C7' };
-      case 'active':
-        return { label: 'Aktif', color: '#10B981', bg: '#D1FAE5' };
-      case 'completed':
-        return { label: 'Tamamlandi', color: '#6B7280', bg: '#F3F4F6' };
-      default:
-        return { label: '', color: '#6B7280', bg: '#F3F4F6' };
-    }
-  };
-
+  
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Header */}
@@ -245,37 +242,23 @@ const MyShufflesScreen = () => {
           </View>
         ) : filteredShuffles.length === 0 ? (
           <View style={styles.emptyContainer}>
-            <Icon name="cards-outline" size={64} color="#D1D5DB" />
+            <Icon name={activeTab === 'chats' ? 'chat-outline' : 'cards-outline'} size={64} color="#D1D5DB" />
             <Text style={styles.emptyTitle}>
-              {activeTab === 'active'
-                ? 'Aktif bulusman yok'
-                : 'Tamamlanan bulusman yok'}
+              {activeTab === 'chats' && 'Aktif sohbetin yok'}
+              {activeTab === 'joined' && 'Katildigin shuffle yok'}
+              {activeTab === 'created' && 'Olusturdugun shuffle yok'}
             </Text>
             <Text style={styles.emptySubtitle}>
-              {activeTab === 'active'
-                ? 'Ana sayfadan yeni bir shuffle baslat!'
-                : 'Bulusmalarin burada gorunecek'}
+              {activeTab === 'chats' && 'Grup tamamlaninca sohbet acilacak'}
+              {activeTab === 'joined' && 'Baskalarinin shuffle\'larina katil!'}
+              {activeTab === 'created' && 'Ana sayfadan yeni shuffle olustur!'}
             </Text>
           </View>
         ) : (
-          filteredShuffles.map((shuffle) => {
-            const statusBadge = getStatusBadge(shuffle.status);
-            return (
+          filteredShuffles.map((shuffle) => (
               <View key={shuffle.id} style={styles.cardWrapper}>
                 {/* Status Badge */}
-                <View
-                  style={[
-                    styles.statusBadge,
-                    { backgroundColor: statusBadge.bg },
-                  ]}
-                >
-                  <View
-                    style={[styles.statusDot, { backgroundColor: statusBadge.color }]}
-                  />
-                  <Text style={[styles.statusText, { color: statusBadge.color }]}>
-                    {statusBadge.label}
-                  </Text>
-                </View>
+                <StatusBadge status={shuffle.status} />
 
                 <MeetupCard
                   totalSlots={shuffle.totalSlots}
@@ -287,8 +270,7 @@ const MyShufflesScreen = () => {
                   onPress={() => handleShufflePress(shuffle)}
                 />
               </View>
-            );
-          })
+            ))
         )}
       </ScrollView>
     </SafeAreaView>
@@ -319,26 +301,28 @@ const styles = StyleSheet.create({
   tabsContainer: {
     flexDirection: 'row',
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 20,
+    paddingHorizontal: 12,
     paddingVertical: 12,
-    gap: 12,
+    gap: 8,
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
   },
   tab: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 24,
+    paddingHorizontal: 8,
+    borderRadius: 20,
     backgroundColor: '#F3F4F6',
-    gap: 8,
+    gap: 4,
   },
   tabActive: {
     backgroundColor: '#EEF2FF',
   },
   tabText: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '600',
     color: '#9CA3AF',
   },

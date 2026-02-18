@@ -13,12 +13,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { shuffleApi } from '../api';
 
-// Anonim kullanıcı renkleri
+// Anonim kullanıcı renkleri (Backend'den gelen isimlerle eşleşmeli)
 const USER_COLORS = [
   { name: 'Mavi', color: '#3B82F6', bg: '#DBEAFE' },
-  { name: 'Kirmizi', color: '#EF4444', bg: '#FEE2E2' },
-  { name: 'Yesil', color: '#10B981', bg: '#D1FAE5' },
+  { name: 'Kırmızı', color: '#EF4444', bg: '#FEE2E2' },
+  { name: 'Yeşil', color: '#10B981', bg: '#D1FAE5' },
   { name: 'Turuncu', color: '#F59E0B', bg: '#FEF3C7' },
   { name: 'Mor', color: '#8B5CF6', bg: '#EDE9FE' },
   { name: 'Pembe', color: '#EC4899', bg: '#FCE7F3' },
@@ -35,18 +36,23 @@ const GroupChatScreen = ({ navigation, route }) => {
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const [participants, setParticipants] = useState([]);
-  const [currentUserId, setCurrentUserId] = useState(null);
+  const [participantCount, setParticipantCount] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
 
   const flatListRef = useRef(null);
   const pollIntervalRef = useRef(null);
 
-  // Kullanıcıya renk ata (sabit, odaya göre)
-  const getUserColor = useCallback((userId) => {
-    const index = participants.findIndex(p => p.id === userId || p.odanıcıId === userId);
-    return USER_COLORS[index % USER_COLORS.length];
-  }, [participants]);
+  // Kullanıcıya renk ata (backend'den gelen renk adına göre)
+  const getUserColor = useCallback((senderColor) => {
+    if (senderColor) {
+      const colorFromBackend = USER_COLORS.find(c =>
+        c.name.toLowerCase() === senderColor.toLowerCase()
+      );
+      if (colorFromBackend) return colorFromBackend;
+    }
+    // Varsayılan renk
+    return USER_COLORS[0];
+  }, []);
 
   // Mesajları çek
   const fetchMessages = useCallback(async (isRefresh = false) => {
@@ -55,63 +61,46 @@ const GroupChatScreen = ({ navigation, route }) => {
         setRefreshing(true);
       }
 
-      // TODO: API'den mesajları çek
-      // const response = await chatApi.getMessages(shuffleId);
+      console.log('Fetching messages for shuffle:', shuffleId);
+      const response = await shuffleApi.getMessages(shuffleId);
+      console.log('Messages response:', JSON.stringify(response, null, 2));
 
-      // Mock data for now
-      const mockMessages = [
-        {
-          id: '1',
-          senderId: 'user1',
-          content: 'Merhaba herkese!',
-          createdAt: new Date(Date.now() - 3600000).toISOString(),
-          type: 'text',
-        },
-        {
-          id: '2',
-          senderId: 'user2',
-          content: 'Selam! Nerede bulusacagiz?',
-          createdAt: new Date(Date.now() - 3000000).toISOString(),
-          type: 'text',
-        },
-        {
-          id: '3',
-          senderId: 'user3',
-          content: 'Kadikoy nasil?',
-          createdAt: new Date(Date.now() - 2400000).toISOString(),
-          type: 'text',
-        },
-        {
-          id: 'system1',
-          senderId: 'system',
-          content: 'Yesil gruba katildi',
-          createdAt: new Date(Date.now() - 1800000).toISOString(),
-          type: 'system',
-        },
-        {
-          id: '4',
-          senderId: 'user1',
-          content: 'Kadikoy olabilir, saat kacta?',
-          createdAt: new Date(Date.now() - 1200000).toISOString(),
-          type: 'text',
-        },
-      ];
+      // Response'u parse et
+      let messageList = [];
+      if (response?.data?.messages) {
+        messageList = response.data.messages;
+      } else if (Array.isArray(response?.data)) {
+        messageList = response.data;
+      } else if (Array.isArray(response)) {
+        messageList = response;
+      }
 
-      const mockParticipants = [
-        { id: 'user1', odanıcıId: 'user1' },
-        { id: 'user2', odanıcıId: 'user2' },
-        { id: 'user3', odanıcıId: 'user3' },
-        { id: 'user4', odanıcıId: 'user4' },
-        { id: 'user5', odanıcıId: 'user5' },
-      ];
+      // Mesajları frontend formatına çevir
+      const mappedMessages = messageList.map((msg) => ({
+        id: msg.id,
+        senderColor: msg.senderColor,
+        isMe: msg.isMe || false,
+        content: msg.content || msg.text || msg.message,
+        createdAt: msg.createdAt || msg.timestamp,
+        type: msg.type?.toLowerCase() || 'text',
+      }));
 
-      setMessages(mockMessages);
-      setParticipants(mockParticipants);
-      setCurrentUserId('user1'); // Current user mock
+      setMessages(mappedMessages);
+
+      // Katılımcı sayısını çek
+      try {
+        const participantsResponse = await shuffleApi.getParticipants(shuffleId);
+        const count = participantsResponse?.data?.currentCount ||
+          participantsResponse?.data?.participants?.length || 0;
+        setParticipantCount(count);
+      } catch (participantError) {
+        console.error('Failed to fetch participants:', participantError);
+      }
 
     } catch (error) {
       console.error('Failed to fetch messages:', error);
-      Alert.alert('Hata', 'Mesajlar yuklenemedi');
+      console.error('Error response:', error.response?.data);
+      setMessages([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -127,19 +116,16 @@ const GroupChatScreen = ({ navigation, route }) => {
     setSending(true);
 
     try {
-      // TODO: API'ye mesaj gönder
-      // await chatApi.sendMessage(shuffleId, { content: messageText });
+      console.log('Sending message to shuffle:', shuffleId);
 
-      // Mock: Mesajı listeye ekle
-      const newMsg = {
-        id: Date.now().toString(),
-        senderId: currentUserId,
-        content: messageText,
-        createdAt: new Date().toISOString(),
-        type: 'text',
-      };
+      // API'ye mesaj gönder
+      const response = await shuffleApi.sendMessage(shuffleId, {
+        content: messageText
+      });
+      console.log('Send message response:', response);
 
-      setMessages(prev => [...prev, newMsg]);
+      // Başarılı olunca mesajları yenile
+      await fetchMessages();
 
       // Scroll to bottom
       setTimeout(() => {
@@ -148,7 +134,8 @@ const GroupChatScreen = ({ navigation, route }) => {
 
     } catch (error) {
       console.error('Failed to send message:', error);
-      Alert.alert('Hata', 'Mesaj gonderilemedi');
+      console.error('Error response:', error.response?.data);
+      Alert.alert('Hata', error.response?.data?.message || 'Mesaj gonderilemedi');
       setNewMessage(messageText); // Restore message
     } finally {
       setSending(false);
@@ -190,8 +177,8 @@ const GroupChatScreen = ({ navigation, route }) => {
       );
     }
 
-    const isOwnMessage = item.senderId === currentUserId;
-    const userColor = getUserColor(item.senderId);
+    const isOwnMessage = item.isMe;
+    const userColor = getUserColor(item.senderColor);
 
     return (
       <View
@@ -264,7 +251,7 @@ const GroupChatScreen = ({ navigation, route }) => {
           <View style={styles.participantInfo}>
             <Icon name="account-group" size={16} color="#6B7280" />
             <Text style={styles.participantCount}>
-              {participants.length} Katilimci
+              {participantCount} Katilimci
             </Text>
           </View>
         </View>

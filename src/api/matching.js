@@ -51,6 +51,18 @@ export const shuffleApi = {
     return response.data;
   },
 
+  // Shuffle güncelle
+  update: async (id, data) => {
+    const response = await apiClient.put(`/shuffles/${id}`, data);
+    return response.data;
+  },
+
+  // Shuffle sil
+  delete: async (id) => {
+    const response = await apiClient.delete(`/shuffles/${id}`);
+    return response.data;
+  },
+
   // Shuffle'a katıl
   join: async (id) => {
     const response = await apiClient.post(`/shuffles/${id}/join`);

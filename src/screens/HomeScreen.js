@@ -214,7 +214,7 @@ const HomeScreen = ({ navigation }) => {
         id: item.id,
         totalSlots: item.maxParticipants || 5,
         joinedCount: item.currentParticipants || item.members?.length || 1,
-        location: item.locationName || 'Konum belirtilmedi',
+        location: item.locationName || item.location?.name || item.location?.address || 'Konum belirtilmedi',
         // Backend metre gönderiyor, km'ye çevir
         distance: item.distance ? item.distance / 1000 : null,
         activityType: item.activityType,
@@ -251,7 +251,7 @@ const HomeScreen = ({ navigation }) => {
     return types[activityType] || activityType || 'Bulusma';
   };
 
-  // Fetch feed on mount and filter change
+  // İlk yüklemede feed'i çek
   useEffect(() => {
     fetchFeed();
   }, [fetchFeed]);
