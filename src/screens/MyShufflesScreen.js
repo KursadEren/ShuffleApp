@@ -19,6 +19,7 @@ const TABS = [
   { id: 'chats', label: 'Sohbetlerim', icon: 'chat-outline' },
   { id: 'joined', label: 'Katıldıklarım', icon: 'account-plus-outline' },
   { id: 'created', label: 'Oluşturduklarım', icon: 'plus-circle-outline' },
+  { id: 'history', label: 'Geçmiş', icon: 'history' },
 ];
 
 const MyShufflesScreen = () => {
@@ -129,6 +130,9 @@ const MyShufflesScreen = () => {
         case 'created':
           response = await shuffleApi.getCreatedShuffles();
           break;
+        case 'history':
+          response = await shuffleApi.getHistory();
+          break;
         default:
           response = await shuffleApi.getMyChats();
       }
@@ -235,16 +239,21 @@ const MyShufflesScreen = () => {
           </View>
         ) : shuffles.length === 0 ? (
           <View style={styles.emptyContainer}>
-            <Icon name={activeTab === 'chats' ? 'chat-outline' : 'cards-outline'} size={64} color="#D1D5DB" />
+            <Icon name={
+              activeTab === 'chats' ? 'chat-outline' :
+              activeTab === 'history' ? 'history' : 'cards-outline'
+            } size={64} color="#D1D5DB" />
             <Text style={styles.emptyTitle}>
               {activeTab === 'chats' && 'Aktif sohbetin yok'}
               {activeTab === 'joined' && 'Katildigin shuffle yok'}
               {activeTab === 'created' && 'Olusturdugun shuffle yok'}
+              {activeTab === 'history' && 'Gecmis bulusma yok'}
             </Text>
             <Text style={styles.emptySubtitle}>
               {activeTab === 'chats' && 'Bir shuffle\'a katildiginda burada gorunecek'}
               {activeTab === 'joined' && 'Baskalarinin shuffle\'larina katil!'}
               {activeTab === 'created' && 'Ana sayfadan yeni shuffle olustur!'}
+              {activeTab === 'history' && 'Tamamlanan bulusmalar burada gorunecek'}
             </Text>
           </View>
         ) : (

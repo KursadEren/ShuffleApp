@@ -12,10 +12,13 @@ import {
   Alert,
   Animated,
   Dimensions,
+  Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { shuffleApi } from '../api';
+import EmojiPicker from '../components/EmojiPicker';
+import MessageReactions from '../components/MessageReactions';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -43,6 +46,9 @@ const GroupChatScreen = ({ navigation, route }) => {
   const [participantCount, setParticipantCount] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [inputFocused, setInputFocused] = useState(false);
+  const [emojiPickerVisible, setEmojiPickerVisible] = useState(false);
+  const [emojiPickerPosition, setEmojiPickerPosition] = useState({ x: 0, y: 0 });
+  const [selectedMessageId, setSelectedMessageId] = useState(null);
 
   const flatListRef = useRef(null);
   const pollIntervalRef = useRef(null);
@@ -82,6 +88,7 @@ const GroupChatScreen = ({ navigation, route }) => {
         content: msg.content || msg.text || msg.message,
         createdAt: msg.createdAt || msg.timestamp,
         type: msg.type?.toLowerCase() || 'text',
+        reactions: msg.reactions || [],
       }));
 
       setMessages(mappedMessages);
@@ -129,6 +136,40 @@ const GroupChatScreen = ({ navigation, route }) => {
       setNewMessage(messageText);
     } finally {
       setSending(false);
+    }
+  };
+
+  // Mesaja uzun basınca emoji picker aç
+  const handleMessageLongPress = (messageId, event) => {
+    const { pageX, pageY } = event.nativeEvent;
+    setSelectedMessageId(messageId);
+    setEmojiPickerPosition({ x: pageX, y: pageY });
+    setEmojiPickerVisible(true);
+  };
+
+  // Emoji seçilince reaction ekle
+  const handleEmojiSelect = async (emoji) => {
+    if (!selectedMessageId) return;
+
+    try {
+      await shuffleApi.addReaction(shuffleId, selectedMessageId, emoji);
+      await fetchMessages();
+    } catch (error) {
+      console.error('Failed to add reaction:', error);
+    }
+  };
+
+  // Reaction'a tıklanınca toggle (ekle/kaldır)
+  const handleReactionPress = async (messageId, emoji, hasReacted) => {
+    try {
+      if (hasReacted) {
+        await shuffleApi.removeReaction(shuffleId, messageId, emoji);
+      } else {
+        await shuffleApi.addReaction(shuffleId, messageId, emoji);
+      }
+      await fetchMessages();
+    } catch (error) {
+      console.error('Failed to toggle reaction:', error);
     }
   };
 
@@ -219,27 +260,40 @@ const GroupChatScreen = ({ navigation, route }) => {
             </View>
           )}
 
-          <View style={[
-            styles.messageBubble,
-            isOwnMessage ? styles.ownBubble : styles.otherBubble,
-          ]}>
-            {isOwnMessage ? (
-              <View style={styles.ownBubbleInner}>
-                <Text style={styles.ownMessageText}>{item.content}</Text>
-                <View style={styles.messageFooter}>
-                  <Text style={styles.ownMessageTime}>{formatTime(item.createdAt)}</Text>
-                  <Icon name="check-all" size={14} color="rgba(255,255,255,0.7)" />
-                </View>
+          <View style={styles.messageWrapper}>
+            <Pressable
+              onLongPress={(event) => handleMessageLongPress(item.id, event)}
+              delayLongPress={300}
+            >
+              <View style={[
+                styles.messageBubble,
+                isOwnMessage ? styles.ownBubble : styles.otherBubble,
+              ]}>
+                {isOwnMessage ? (
+                  <View style={styles.ownBubbleInner}>
+                    <Text style={styles.ownMessageText}>{item.content}</Text>
+                    <View style={styles.messageFooter}>
+                      <Text style={styles.ownMessageTime}>{formatTime(item.createdAt)}</Text>
+                      <Icon name="check-all" size={14} color="rgba(255,255,255,0.7)" />
+                    </View>
+                  </View>
+                ) : (
+                  <View style={[styles.otherBubbleInner, { borderLeftColor: userColor.color }]}>
+                    <Text style={[styles.senderName, { color: userColor.color }]}>
+                      {userColor.name}
+                    </Text>
+                    <Text style={styles.messageText}>{item.content}</Text>
+                    <Text style={styles.messageTime}>{formatTime(item.createdAt)}</Text>
+                  </View>
+                )}
               </View>
-            ) : (
-              <View style={[styles.otherBubbleInner, { borderLeftColor: userColor.color }]}>
-                <Text style={[styles.senderName, { color: userColor.color }]}>
-                  {userColor.name}
-                </Text>
-                <Text style={styles.messageText}>{item.content}</Text>
-                <Text style={styles.messageTime}>{formatTime(item.createdAt)}</Text>
-              </View>
-            )}
+            </Pressable>
+
+            <MessageReactions
+              reactions={item.reactions}
+              onReactionPress={(emoji, hasReacted) => handleReactionPress(item.id, emoji, hasReacted)}
+              isOwnMessage={isOwnMessage}
+            />
           </View>
         </View>
       </View>
@@ -387,6 +441,13 @@ const GroupChatScreen = ({ navigation, route }) => {
           </View>
         </View>
       </KeyboardAvoidingView>
+
+      <EmojiPicker
+        visible={emojiPickerVisible}
+        onClose={() => setEmojiPickerVisible(false)}
+        onSelect={handleEmojiSelect}
+        position={emojiPickerPosition}
+      />
     </SafeAreaView>
   );
 };
@@ -533,8 +594,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
   },
-  messageBubble: {
+  messageWrapper: {
     maxWidth: SCREEN_WIDTH * 0.75,
+  },
+  messageBubble: {
     borderRadius: 20,
     overflow: 'hidden',
   },

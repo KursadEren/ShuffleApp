@@ -69,6 +69,18 @@ export const shuffleApi = {
     return response.data;
   },
 
+  // Geçmiş - Tamamlanan shuffle'lar
+  getHistory: async (params = {}) => {
+    const response = await apiClient.get('/shuffles/my/history', {
+      params: {
+        page: params.page || 1,
+        limit: params.limit || 20,
+        ...params,
+      }
+    });
+    return response.data;
+  },
+
   // Tek shuffle detayı
   getById: async (id) => {
     const response = await apiClient.get(`/shuffles/${id}`);
@@ -120,6 +132,24 @@ export const shuffleApi = {
   // Chat katılımcılarını getir
   getParticipants: async (shuffleId) => {
     const response = await apiClient.get(`/shuffles/${shuffleId}/participants`);
+    return response.data;
+  },
+
+  // Mesaja reaction ekle
+  addReaction: async (shuffleId, messageId, emoji) => {
+    const response = await apiClient.post(
+      `/shuffles/${shuffleId}/chat/messages/${messageId}/reactions`,
+      { emoji }
+    );
+    return response.data;
+  },
+
+  // Mesajdan reaction kaldır
+  removeReaction: async (shuffleId, messageId, emoji) => {
+    const response = await apiClient.delete(
+      `/shuffles/${shuffleId}/chat/messages/${messageId}/reactions`,
+      { data: { emoji } }
+    );
     return response.data;
   },
 };
