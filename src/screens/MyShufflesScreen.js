@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
-  Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -28,96 +27,25 @@ const MyShufflesScreen = () => {
   const [shuffles, setShuffles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-
-  // Shuffle'a tıklandığında
-  const handleShufflePress = (shuffle) => {
-    if (shuffle.status === 'active' || shuffle.status === 'completed') {
-      // Aktif veya tamamlanmış shuffle - Chat'e git
-      navigation.navigate('GroupChat', {
-        shuffleId: shuffle.id,
-        shuffleData: {
-          location: shuffle.location,
-          scheduledAt: shuffle.scheduledAt,
-          purpose: shuffle.purpose,
-          status: shuffle.status,
-        },
-      });
-    } else if (shuffle.status === 'waiting') {
-      // Bekleyen shuffle - Bilgi göster
-      Alert.alert(
-        'Katilimci Bekleniyor',
-        `${shuffle.joinedCount}/${shuffle.totalSlots} kisi katildi. Grup tamamlaninca sohbet acilacak.`,
-        [{ text: 'Tamam' }]
-      );
-    }
-  };
   const [error, setError] = useState(null);
 
-  const fetchMyShuffles = useCallback(async (isRefresh = false) => {
-    try {
-      if (isRefresh) {
-        setRefreshing(true);
-      } else {
-        setLoading(true);
-      }
-      setError(null);
-
-      const response = await shuffleApi.getMyShuffles();
-      console.log('My Shuffles response:', JSON.stringify(response, null, 2));
-
-      // Backend response formatı: { success: true, data: { posts: [...] } }
-      let shuffleList = [];
-      if (response?.data?.posts) {
-        shuffleList = response.data.posts;
-      } else if (response?.data?.shuffles) {
-        shuffleList = response.data.shuffles;
-      } else if (Array.isArray(response?.data)) {
-        shuffleList = response.data;
-      } else if (Array.isArray(response)) {
-        shuffleList = response;
-      }
-
-      console.log('Shuffle list:', shuffleList);
-
-      // Backend'den gelen veriyi map'le
-      const mappedShuffles = shuffleList.map((item) => ({
-        id: item.id,
-        status: mapStatus(item.status),
-        totalSlots: item.maxParticipants || 5,
-        joinedCount: item.currentParticipants || item.members?.length || 1,
-        location: item.locationName || item.location?.name || item.location?.address || 'Konum belirtilmedi',
-        distance: item.distance ? item.distance / 1000 : null,
-        purpose: mapActivityType(item.activityType),
-        scheduledAt: item.scheduledAt,
-        createdAt: item.createdAt,
-        spotsLeft: item.spotsLeft,
-        isCreator: item.isCreator,
-      }));
-
-      setShuffles(mappedShuffles);
-    } catch (err) {
-      console.error('Shuffle fetch error:', err);
-      console.error('Full error response:', JSON.stringify(err.response?.data, null, 2));
-
-      const errorData = err.response?.data;
-      if (errorData?.errors) {
-        // Validation errors
-        console.error('Validation errors:', errorData.errors);
-        setError('Validation hatasi: ' + JSON.stringify(errorData.errors));
-      } else if (err.response?.status === 404) {
-        setError('Endpoint bulunamadi');
-      } else {
-        setError(errorData?.message || 'Bulusmalar yuklenemedi');
-      }
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
+  // Shuffle'a tıklandığında - direkt chat'e git
+  const handleShufflePress = (shuffle) => {
+    navigation.navigate('GroupChat', {
+      shuffleId: shuffle.id,
+      shuffleData: {
+        location: shuffle.location,
+        scheduledAt: shuffle.scheduledAt,
+        purpose: shuffle.purpose,
+        status: shuffle.status,
+        joinedCount: shuffle.joinedCount,
+        totalSlots: shuffle.totalSlots,
+      },
+    });
+  };
 
   // Status mapping
   const mapStatus = (backendStatus) => {
-    console.log('Backend status:', backendStatus);
     switch (backendStatus) {
       case 'PENDING':
         return 'waiting';
@@ -134,7 +62,6 @@ const MyShufflesScreen = () => {
       case 'CANCELLED':
         return 'cancelled';
       default:
-        console.log('Unknown status, defaulting to active:', backendStatus);
         return 'active';
     }
   };
@@ -153,31 +80,92 @@ const MyShufflesScreen = () => {
     return types[activityType] || activityType || 'Bulusma';
   };
 
+  // Tab'a göre API çağır
+  const fetchShuffles = useCallback(async (tab, isRefresh = false) => {
+    // Response'u parse et
+    const parseResponseData = (response) => {
+      let shuffleList = [];
+      if (response?.data?.posts) {
+        shuffleList = response.data.posts;
+      } else if (response?.data?.shuffles) {
+        shuffleList = response.data.shuffles;
+      } else if (Array.isArray(response?.data)) {
+        shuffleList = response.data;
+      } else if (Array.isArray(response)) {
+        shuffleList = response;
+      }
+
+      return shuffleList.map((item) => ({
+        id: item.id,
+        status: mapStatus(item.status),
+        totalSlots: item.maxParticipants || 5,
+        joinedCount: item.currentParticipants || item.members?.length || 1,
+        location: item.locationName || item.location?.name || item.location?.address || 'Konum belirtilmedi',
+        distance: item.distance ? item.distance / 1000 : null,
+        purpose: mapActivityType(item.activityType),
+        scheduledAt: item.scheduledAt,
+        createdAt: item.createdAt,
+        spotsLeft: item.spotsLeft,
+        isCreator: item.isCreator,
+      }));
+    };
+
+    try {
+      if (isRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+      setError(null);
+
+      let response;
+      switch (tab) {
+        case 'chats':
+          response = await shuffleApi.getMyChats();
+          break;
+        case 'joined':
+          response = await shuffleApi.getJoinedShuffles();
+          break;
+        case 'created':
+          response = await shuffleApi.getCreatedShuffles();
+          break;
+        default:
+          response = await shuffleApi.getMyChats();
+      }
+
+      console.log(`${tab} response:`, JSON.stringify(response, null, 2));
+      const mappedShuffles = parseResponseData(response);
+      setShuffles(mappedShuffles);
+    } catch (err) {
+      console.error('Shuffle fetch error:', err);
+      const errorData = err.response?.data;
+      if (err.response?.status === 404) {
+        setError('Endpoint bulunamadi');
+      } else {
+        setError(errorData?.message || 'Bulusmalar yuklenemedi');
+      }
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  // Tab değiştiğinde veya ilk yüklemede fetch yap
   useEffect(() => {
-    fetchMyShuffles();
-  }, [fetchMyShuffles]);
+    fetchShuffles(activeTab);
+  }, [activeTab, fetchShuffles]);
 
   const onRefresh = () => {
-    fetchMyShuffles(true);
+    fetchShuffles(activeTab, true);
   };
 
-  const filteredShuffles = shuffles.filter((shuffle) => {
-    switch (activeTab) {
-      case 'chats':
-        // Sohbet açılabilen shuffle'lar (aktif veya tamamlanmış)
-        return shuffle.status === 'active' || shuffle.status === 'completed';
-      case 'joined':
-        // Başkasının oluşturduğu, katıldığım shuffle'lar
-        return !shuffle.isCreator;
-      case 'created':
-        // Benim oluşturduğum shuffle'lar
-        return shuffle.isCreator;
-      default:
-        return true;
+  const handleTabChange = (tabId) => {
+    if (tabId !== activeTab) {
+      setActiveTab(tabId);
+      setShuffles([]); // Tab değişince listeyi temizle
     }
-  });
+  };
 
-  
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Header */}
@@ -197,7 +185,7 @@ const MyShufflesScreen = () => {
           <TouchableOpacity
             key={tab.id}
             style={[styles.tab, activeTab === tab.id && styles.tabActive]}
-            onPress={() => setActiveTab(tab.id)}
+            onPress={() => handleTabChange(tab.id)}
           >
             <Icon
               name={tab.icon}
@@ -233,19 +221,19 @@ const MyShufflesScreen = () => {
         {loading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color="#6C63FF" />
-            <Text style={styles.loadingText}>Bulusmalar yukleniyor...</Text>
+            <Text style={styles.loadingText}>Yukleniyor...</Text>
           </View>
         ) : error ? (
           <View style={styles.emptyContainer}>
             <Icon name="alert-circle-outline" size={64} color="#EF4444" />
             <Text style={styles.emptyTitle}>Hata olustu</Text>
             <Text style={styles.emptySubtitle}>{error}</Text>
-            <TouchableOpacity style={styles.retryButton} onPress={() => fetchMyShuffles()}>
+            <TouchableOpacity style={styles.retryButton} onPress={() => fetchShuffles(activeTab)}>
               <Icon name="refresh" size={20} color="#FFFFFF" />
               <Text style={styles.retryButtonText}>Tekrar Dene</Text>
             </TouchableOpacity>
           </View>
-        ) : filteredShuffles.length === 0 ? (
+        ) : shuffles.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Icon name={activeTab === 'chats' ? 'chat-outline' : 'cards-outline'} size={64} color="#D1D5DB" />
             <Text style={styles.emptyTitle}>
@@ -254,28 +242,28 @@ const MyShufflesScreen = () => {
               {activeTab === 'created' && 'Olusturdugun shuffle yok'}
             </Text>
             <Text style={styles.emptySubtitle}>
-              {activeTab === 'chats' && 'Grup tamamlaninca sohbet acilacak'}
+              {activeTab === 'chats' && 'Bir shuffle\'a katildiginda burada gorunecek'}
               {activeTab === 'joined' && 'Baskalarinin shuffle\'larina katil!'}
               {activeTab === 'created' && 'Ana sayfadan yeni shuffle olustur!'}
             </Text>
           </View>
         ) : (
-          filteredShuffles.map((shuffle) => (
-              <View key={shuffle.id} style={styles.cardWrapper}>
-                {/* Status Badge */}
-                <StatusBadge status={shuffle.status} />
+          shuffles.map((shuffle) => (
+            <View key={shuffle.id} style={styles.cardWrapper}>
+              {/* Status Badge */}
+              <StatusBadge status={shuffle.status} />
 
-                <MeetupCard
-                  totalSlots={shuffle.totalSlots}
-                  joinedCount={shuffle.joinedCount}
-                  location={shuffle.location}
-                  distance={shuffle.distance}
-                  customPurpose={shuffle.purpose}
-                  scheduledAt={shuffle.scheduledAt}
-                  onPress={() => handleShufflePress(shuffle)}
-                />
-              </View>
-            ))
+              <MeetupCard
+                totalSlots={shuffle.totalSlots}
+                joinedCount={shuffle.joinedCount}
+                location={shuffle.location}
+                distance={shuffle.distance}
+                customPurpose={shuffle.purpose}
+                scheduledAt={shuffle.scheduledAt}
+                onPress={() => handleShufflePress(shuffle)}
+              />
+            </View>
+          ))
         )}
       </ScrollView>
     </SafeAreaView>
@@ -345,24 +333,6 @@ const styles = StyleSheet.create({
   },
   cardWrapper: {
     gap: 8,
-  },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 16,
-    gap: 8,
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  statusText: {
-    fontSize: 13,
-    fontWeight: '600',
   },
   emptyContainer: {
     flex: 1,

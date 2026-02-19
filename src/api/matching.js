@@ -33,9 +33,33 @@ export const shuffleApi = {
     return response.data;
   },
 
-  // Kullanıcının kendi shuffle'larını getir
-  getMyShuffles: async (params = {}) => {
-    const response = await apiClient.get('/shuffles/my', {
+  // Sohbetlerim - Aktif chat'ler (status: active/completed)
+  getMyChats: async (params = {}) => {
+    const response = await apiClient.get('/shuffles/my/chats', {
+      params: {
+        page: params.page || 1,
+        limit: params.limit || 20,
+        ...params,
+      }
+    });
+    return response.data;
+  },
+
+  // Katıldıklarım - Başkasının oluşturduğu shuffle'lar
+  getJoinedShuffles: async (params = {}) => {
+    const response = await apiClient.get('/shuffles/my/joined', {
+      params: {
+        page: params.page || 1,
+        limit: params.limit || 20,
+        ...params,
+      }
+    });
+    return response.data;
+  },
+
+  // Oluşturduklarım - Benim oluşturduğum shuffle'lar
+  getCreatedShuffles: async (params = {}) => {
+    const response = await apiClient.get('/shuffles/my/created', {
       params: {
         page: params.page || 1,
         limit: params.limit || 20,

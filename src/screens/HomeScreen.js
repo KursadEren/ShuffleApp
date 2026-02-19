@@ -214,21 +214,21 @@ const HomeScreen = ({ navigation }) => {
         shuffleList = response;
       }
 
-      // Map to frontend format
+      // Map to frontend format (backend filters out user's own shuffles)
       const mappedFeed = shuffleList.map((item) => ({
-        id: item.id,
-        totalSlots: item.maxParticipants || 5,
-        joinedCount: item.currentParticipants || item.members?.length || 1,
-        location: item.locationName || item.location?.name || item.location?.address || 'Konum belirtilmedi',
-        // Backend metre gönderiyor, km'ye çevir
-        distance: item.distance ? item.distance / 1000 : null,
-        activityType: item.activityType,
-        purpose: mapActivityType(item.activityType),
-        scheduledAt: item.scheduledAt,
-        createdAt: item.createdAt,
-        spotsLeft: item.spotsLeft,
-        creatorId: item.creatorId,
-      }));
+          id: item.id,
+          totalSlots: item.maxParticipants || 5,
+          joinedCount: item.currentParticipants || item.members?.length || 1,
+          location: item.locationName || item.location?.name || item.location?.address || 'Konum belirtilmedi',
+          // Backend metre gönderiyor, km'ye çevir
+          distance: item.distance ? item.distance / 1000 : null,
+          activityType: item.activityType,
+          purpose: mapActivityType(item.activityType),
+          scheduledAt: item.scheduledAt,
+          createdAt: item.createdAt,
+          spotsLeft: item.spotsLeft,
+          creatorId: item.creatorId,
+        }));
 
       setFeed(mappedFeed);
     } catch (error) {
