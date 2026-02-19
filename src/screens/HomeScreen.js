@@ -21,6 +21,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import Geolocation from '@react-native-community/geolocation';
 import Dice from '../components/Dice';
 import MeetupCard from '../components/MeetupCard';
+import ShuffleDetailModal from '../components/ShuffleDetailModal';
 import { shuffleApi } from '../api';
 
 const MEETUP_PURPOSES = [
@@ -100,6 +101,10 @@ const HomeScreen = ({ navigation }) => {
   const [activeFilter, setActiveFilter] = useState('all');
   const [userLocation, setUserLocation] = useState(null);
   const [locationError, setLocationError] = useState(null);
+
+  // Shuffle detail modal
+  const [detailModalVisible, setDetailModalVisible] = useState(false);
+  const [selectedShuffle, setSelectedShuffle] = useState(null);
 
   const dateOptions = getDateOptions();
 
@@ -265,16 +270,8 @@ const HomeScreen = ({ navigation }) => {
   };
 
   const handleShufflePress = (shuffle) => {
-    // TODO: Navigate to shuffle detail
-    console.log('Shuffle pressed:', shuffle.id);
-    Alert.alert(
-      shuffle.purpose,
-      `${shuffle.location}\n${shuffle.joinedCount}/${shuffle.totalSlots} Katilimci`,
-      [
-        { text: 'Kapat' },
-        { text: 'Katil', onPress: () => handleJoinShuffle(shuffle.id) },
-      ]
-    );
+    setSelectedShuffle(shuffle);
+    setDetailModalVisible(true);
   };
 
   const handleJoinShuffle = async (shuffleId) => {
@@ -915,6 +912,14 @@ const HomeScreen = ({ navigation }) => {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* Shuffle Detail Modal */}
+      <ShuffleDetailModal
+        visible={detailModalVisible}
+        onClose={() => setDetailModalVisible(false)}
+        onJoin={handleJoinShuffle}
+        shuffle={selectedShuffle}
+      />
     </SafeAreaView>
   );
 };

@@ -187,7 +187,12 @@ const MyShufflesScreen = () => {
       </View>
 
       {/* Tabs */}
-      <View style={styles.tabsContainer}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.tabsScrollView}
+        contentContainerStyle={styles.tabsContainer}
+      >
         {TABS.map((tab) => (
           <TouchableOpacity
             key={tab.id}
@@ -196,7 +201,7 @@ const MyShufflesScreen = () => {
           >
             <Icon
               name={tab.icon}
-              size={20}
+              size={18}
               color={activeTab === tab.id ? '#6C63FF' : '#9CA3AF'}
             />
             <Text
@@ -209,7 +214,7 @@ const MyShufflesScreen = () => {
             </Text>
           </TouchableOpacity>
         ))}
-      </View>
+      </ScrollView>
 
       {/* Content */}
       <ScrollView
@@ -298,31 +303,33 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     marginTop: 4,
   },
-  tabsContainer: {
-    flexDirection: 'row',
+  tabsScrollView: {
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    gap: 8,
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
+    flexGrow: 0,
+  },
+  tabsContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 10,
   },
   tab: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 10,
-    paddingHorizontal: 8,
+    paddingHorizontal: 14,
     borderRadius: 20,
     backgroundColor: '#F3F4F6',
-    gap: 4,
+    gap: 6,
   },
   tabActive: {
     backgroundColor: '#EEF2FF',
   },
   tabText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
     color: '#9CA3AF',
   },
